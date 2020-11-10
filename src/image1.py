@@ -26,8 +26,9 @@ class image_converter:
         self.robot_joint1_pub = rospy.Publisher("/robot/joint1_position_controller/command", Float64, queue_size=10)
         self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
         self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
+        self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
         # Recond the beginning time
-        self.time_trajectory = rospy.get_time()
+        self.start_time = rospy.get_time()
 
     def detect_red(self, image):
         mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
@@ -71,27 +72,6 @@ class image_converter:
         dist = np.sum((circle1Pos - circle2Pos) ** 2)
         return 3 / np.sqrt(dist)
 
-    def detect_joint_angles(self, image):
-        a = self.pixel2meter(image)
-        center = a * self.detect_yellow_blob(image)
-        circle1Pos = a * self.detect_blue_blob(image)
-        circle2Pos = a * self.detect_green_blob(image)
-        circle3Pos = a * self.detect_red_blob(image)
-        ja1 = np.arctan2(center[0] - circle1Pos[0], center[1] - circle1Pos[1])
-        ja2 = np.arctan2(circle1Pos[0] - circle2Pos[0], circle1Pos[1] - circle2Pos[1]) - ja1
-        ja3 = np.arctan2(circle2Pos[0] - circle3Pos[0], circle2Pos[1] - circle3Pos[1]) - ja2 - ja1
-        return np.array([ja1, ja2, ja3])
-
-    def detect_end_effector(self, image):
-        a = self.pixel2meter(image)
-        endPos = a * (self.detect_yellow(image) - self.detect_red(image))
-        return endPos
-
-    def trajectory(self):
-        cur_time = np.array([rospy.get_time() - self.time_trajectory])
-        x_d = float(6* np.cos(cur_time * np.pi/100))
-        y_d = float(6 + np.absolute(1.5* np.sin(cur_time * np.pi/100)))
-        return np.array([x_d,y_d])
 
     # Recieve data from camera 1, process it, and publish
     def callback1(self, data):
@@ -100,6 +80,20 @@ class image_converter:
             self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
+        current_time = rospy.get_time()
+        joint2d = (np.pi/2)*np.sin((np.pi/15)*current_time)
+        joint3d = (np.pi/2)*np.sin((np.pi/18)*current_time)
+        joint4d = (np.pi/2)*np.sin((np.pi/20)*current_time)
+        joint2=Float64()
+        joint2.data = joint2d
+        joint3=Float64()
+        joint3.data = joint3d
+        joint4=Float64()
+        joint4.data = joint4d
+        self.robot_joint2_pub.publish(joint2)
+        self.robot_joint3_pub.publish(joint3)
+        self.robot_joint4_pub.publish(joint4)
+
 
         # Uncomment if you want to save the image
         # cv2.imwrite('image_copy.png', cv_image)
