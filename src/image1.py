@@ -80,7 +80,7 @@ class image_converter:
             self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
-        current_time = rospy.get_time()
+        current_time = rospy.get_time() - self.start_time
         joint2d = (np.pi/2)*np.sin((np.pi/15)*current_time)
         joint3d = (np.pi/2)*np.sin((np.pi/18)*current_time)
         joint4d = (np.pi/2)*np.sin((np.pi/20)*current_time)
