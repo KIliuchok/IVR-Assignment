@@ -39,13 +39,16 @@ class image_converter:
         # Record the beginning time
         self.start_time = rospy.get_time()
 
+
+
+        # Factor of 1e-5 avoids division by 0 
     def detect_red(self, image):
         mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        cx = int(M['m10'] / (M['m00'] + 1e-5))
+        cy = int(M['m01'] / (M['m00'] + 1e-5))
         return np.array([cx, cy])
 
     def detect_blue(self, image):
@@ -53,8 +56,8 @@ class image_converter:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        cx = int(M['m10'] / (M['m00'] + 1e-5))
+        cy = int(M['m01'] / (M['m00'] + 1e-5))
         return np.array([cx, cy])
 
     def detect_green(self, image):
@@ -62,8 +65,8 @@ class image_converter:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        cx = int(M['m10'] / (M['m00'] + 1e-5))
+        cy = int(M['m01'] / (M['m00'] + 1e-5))
         return np.array([cx, cy])
 
     def detect_yellow(self, image):
@@ -71,8 +74,8 @@ class image_converter:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        cx = int(M['m10'] / (M['m00'] + 1e-5))
+        cy = int(M['m01'] / (M['m00'] + 1e-5))
         return np.array([cx, cy])
 
     def pixel2meter(self, image):
@@ -101,16 +104,35 @@ class image_converter:
 
 
     ################### JOINT ESTIMATION W/ COMPUTER VISION ###################
-    # TODO: 
-    #   - remove orange from image -> this ensures joint spheres can be detected
-
 
     def estimate_joint1(self, image):
         pass
 
 
-    def estimate_joint2(self, image):
-        pass
+    # Switch to image2 when green approaches xz plane
+    def estimate_joint2(self, image1, image2):
+        center_blue = self.detect_blue(image1)
+        center_green1 = self.detect_green(image1)
+        #center_green2 = self.detect_green(image2)
+
+       
+        delta_y = center_blue[0] - center_green1[0]
+        delta_x = center_blue[1] - center_green1[1]
+
+        print("Difference x - camera1 ", delta_x)
+        print("Difference y - camera1", delta_y)
+        
+        j_angle = np.arctan2(delta_y, delta_x)          
+
+
+        print("Blue (y,x) ", center_blue[0], ' ', center_blue[1])
+        print("Green 1 (y,x) ", center_green1[0], ' ', center_green1[1])
+        print("Difference x ", delta_x)
+        print("Difference y ", delta_y)
+        print("Angle ", j_angle)
+        print('-' * 20)
+
+        return j_angle
 
 
     def estimate_joint3(self, image):
@@ -123,11 +145,14 @@ class image_converter:
 
 
 
-    # Recieve data from camera 1, process it, and publish
+    ####################### CALLBACKS ##############################
+
+    # Receive data from camera 1, process it, and publish
     def callback1(self, data):
         # Receive the image
         try:
-            cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
+            rospy.Subscriber("camera2/robot/image_raw", Image, self.callback2)
         except CvBridgeError as e:
             print(e)
 
@@ -136,17 +161,17 @@ class image_converter:
     #   self.joint1 = Float64()
     #   self.joint1.data = self.trajectory_joint1(cv_image)
         self.joint2 = Float64()
-        self.joint2.data = self.trajectory_joint2(cv_image1)
+        self.joint2.data = self.trajectory_joint2(self.cv_image1)
         self.joint3 = Float64()
-        self.joint3.data = self.trajectory_joint3(cv_image1)
+        self.joint3.data = self.trajectory_joint3(self.cv_image1)
         self.joint4 = Float64()
-        self.joint4.data = self.trajectory_joint4(cv_image1)
+        self.joint4.data = self.trajectory_joint4(self.cv_image1)
 
         # joints estimations w/ computer vision
         #self.joint1_estimation = Float64()
         #self.joint1_estimation.data = self.estimate_joint1(cv_image1)  
-        #self.joint2_estimation = Float64()
-        #self.joint2_estimation.data = self.estimate_joint2(cv_image1)
+        self.joint2_estimation = Float64()
+        self.joint2_estimation.data = self.estimate_joint2(self.cv_image1, self.cv_image2)
         #self.joint3_estimation = Float64()
         #self.joint3_estimation.data = self.estimate_joint3(cv_image1)
         #self.joint4_estimation = Float64()
@@ -154,13 +179,14 @@ class image_converter:
 
 
 
-
-        im1 = cv2.imshow('window1', cv_image1)
+        im2 = cv2.imshow('window2', self.cv_image2)
+        im1 = cv2.imshow('window1', self.cv_image1)
         cv2.waitKey(1)
         # Publish the results
         try:
-            self.image_pub1.publish(self.bridge.cv2_to_imgmsg(cv_image1, "bgr8"))
-
+            rate = rospy.Rate(20)
+            rate.sleep()
+            self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             # Move joints by following given trajectories
             #self.robot_joint1_pub.publish(self.joint1)
             self.robot_joint2_pub.publish(self.joint2)
@@ -169,12 +195,20 @@ class image_converter:
 
             # Publish joint estimation w/ computer vision 
             #self.joint1_estimation_pub.publish(self.joint1_estimation)
-            #self.joint2_estimation_pub.publish(self.joint2_estimation)
+            self.joint2_estimation_pub.publish(self.joint2_estimation)
             #self.joint3_estimation_pub.publish(self.joint3_estimation)
             #self.joint4_estimation_pub.publish(self.joint4_estimation)      
 
 
         except CvBridgeError as e:
+            print(e)
+
+
+    # Receive data from camera2
+    def callback2(self, data):
+        try:
+            self.cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
+        except CvBridgeError as e: 
             print(e)
 
 
