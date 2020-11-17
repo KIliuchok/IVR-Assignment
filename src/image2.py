@@ -23,6 +23,54 @@ class image_converter:
     self.image_sub2 = rospy.Subscriber("/camera2/robot/image_raw",Image,self.callback2)
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
+    
+
+    self.robot_joint1_x_estimation = rospy.Publisher("/estimation/joint1pos_x", Float64, queue_size=10)
+    self.robot_joint23_x_estimation = rospy.Publisher("/estimation/joint23pos_x", Float64, queue_size=10)
+    self.robot_joint4_x_estimation = rospy.Publisher("/estimation/joint4pos_x", Float64, queue_size=10)
+    self.robot_joint1_z_estimation = rospy.Publisher("/estimation/joint1pos_z", Float64, queue_size=10)
+    self.robot_joint23_z_estimation = rospy.Publisher("/estimation/joint23pos_z", Float64, queue_size=10)
+    self.robot_joint4_z_estimation = rospy.Publisher("/estimation/joint4pos_z", Float64, queue_size=10)
+    self.robot_ee_x_estimation = rospy.Publisher("/estimation/ee_x", Float64, queue_size=10)
+    self.robot_ee_z_estimation = rospy.Publisher("/estimation/ee_z", Float64, queue_size=10)
+
+    self.rate = rospy.Rate(20)
+
+  def detect_red(self, image):
+    mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=3)
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
+
+  def detect_blue(self, image):
+    mask = cv2.inRange(image, (100, 0, 0), (255, 0, 0))
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=3)
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
+
+  def detect_green(self, image):
+    mask = cv2.inRange(image, (0, 100, 0), (0, 255, 0))
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=3)
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
+
+  def detect_yellow(self, image):
+    mask = cv2.inRange(image, (0, 100, 100), (0, 255, 255))
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=3)
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
 
 
   # Receive data, process it, and publish
@@ -37,9 +85,46 @@ class image_converter:
     im2=cv2.imshow('window2', self.cv_image2)
     cv2.waitKey(1)
 
+    yellow = self.detect_yellow(self.cv_image2)
+    self.joint1x = Float64()
+    self.joint1x.data = yellow[0]
+    self.joint1z = Float64()
+    self.joint1z.data = yellow[1]
+
+    blue = self.detect_blue(self.cv_image2)
+    self.joint23_x = Float64()
+    self.joint23_x.data = blue[0]
+    self.joint23_z = Float64()
+    self.joint23_z.data = blue[1]
+
+    green = self.detect_green(self.cv_image2)
+    self.joint4_x = Float64()
+    self.joint4_x.data = green[0]
+    self.joint4_z = Float64()
+    self.joint4_z.data = green[1]
+
+    red = self.detect_red(self.cv_image2)
+    self.ee_pos_x = Float64()
+    self.ee_pos_x.data = red[0]
+    self.ee_pos_z = Float64()
+    self.ee_pos_z = red[1]
+
+
     # Publish the results
     try: 
       self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
+
+      self.robot_joint1_x_estimation.publish(self.joint1x)
+      self.robot_joint1_z_estimation.publish(self.joint1z)
+
+      self.robot_joint23_x_estimation.publish(self.joint23_x)
+      self.robot_joint23_z_estimation.publish(self.joint23_z)
+
+      self.robot_joint4_x_estimation.publish(self.joint4_x)
+      self.robot_joint4_z_estimation.publish(self.joint4_z)
+
+      self.robot_ee_x_estimation.publish(self.ee_pos_x)
+      self.robot_ee_z_estimation.publish(self.ee_pos_z)
     except CvBridgeError as e:
       print(e)
 
