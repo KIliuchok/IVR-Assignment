@@ -206,6 +206,10 @@ class image_converter:
         self.joint4 = Float64()
         self.joint4.data = self.trajectory_joint4(self.cv_image1)
 
+        print("x ", self.joint23_coordinates['x'])
+        print("y ", self.joint23_coordinates['y'])
+        print("z ", self.joint23_coordinates['z'])
+
         # joints estimations w/ computer vision
         #self.joint1_estimation = Float64()
         #self.joint1_estimation.data = self.estimate_joint1(cv_image1)  
