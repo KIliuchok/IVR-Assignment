@@ -39,19 +39,48 @@ class image_converter:
         # Record the beginning time
         self.start_time = rospy.get_time()
 
+        # Global coordinates
+        self.joint1_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.joint23_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.joint4_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.ee_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
+
         # Get the x and z coordinates from image2.py
-        self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64)
-        self.joint1_estimation_z = rospy.Subscriber("/estimation/joint1pos_z", Float64)
-        self.joint23_estimation_x = rospy.Subscriber("/estimation/joint23pos_x", Float64)
-        self.joint23_estimation_z = rospy.Subscriber("/estimation/joint23pos_z", Float64)
-        self.joint4_estimation_x = rospy.Subscriber("/estimation/joint4pos_x", Float64)
-        self.joint4_estimation_z = rospy.Subscriber("/estimation/joint4pos_z", Float64)
-        self.ee_estimation_x = rospy.Subscriber("/estimation/ee_x", Float64)
-        self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64)
+        self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64, update_j1_x)
+        self.joint1_estimation_z = rospy.Subscriber("/estimation/joint1pos_z", Float64, update_j1_z)
+        self.joint23_estimation_x = rospy.Subscriber("/estimation/joint23pos_x", Float64, update_j23_x)
+        self.joint23_estimation_z = rospy.Subscriber("/estimation/joint23pos_z", Float64, update_j23_z)
+        self.joint4_estimation_x = rospy.Subscriber("/estimation/joint4pos_x", Float64, update_j4_x)
+        self.joint4_estimation_z = rospy.Subscriber("/estimation/joint4pos_z", Float64, update_j4_z)
+        self.ee_estimation_x = rospy.Subscriber("/estimation/ee_x", Float64, update_ee_x)
+        self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64, update_ee_z)
 
 
+    def update_j1_x(self,data):
+    	 self.joint1_coordinates['x'] = data.data
 
-        # Factor of 1e-5 avoids division by 0 
+    def update_j1_z(self,data):
+    	 self.joint1_coordinates['z'] = data.data
+
+    def update_j23_x(self,data):
+    	 self.joint23_coordinates['x'] = data.data
+
+    def update_j23_z(self,data):
+    	 self.joint23_coordinates['z'] = data.data
+
+    def update_j4_x(self,data):
+    	 self.joint4_coordinates['x'] = data.data
+
+    def update_j4_z(self,data):
+    	 self.joint4_coordinates['z'] = data.data
+
+    def update_ee_x(self,data):
+   	 self.ee_coordinates['x'] = data.data
+
+    def update_ee_z(self,data):
+   	 self.ee_coordinates['z'] = data.data
+        
+    # Factor of 1e-5 avoids division by 0 
     def detect_red(self, image):
         mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
         kernel = np.ones((5, 5), np.uint8)
