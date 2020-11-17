@@ -39,6 +39,16 @@ class image_converter:
         # Record the beginning time
         self.start_time = rospy.get_time()
 
+        # Get the x and z coordinates from image2.py
+        self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64)
+        self.joint1_estimation_z = rospy.Subscriber("/estimation/joint1pos_z", Float64)
+        self.joint23_estimation_x = rospy.Subscriber("/estimation/joint23pos_x", Float64)
+        self.joint23_estimation_z = rospy.Subscriber("/estimation/joint23pos_z", Float64)
+        self.joint4_estimation_x = rospy.Subscriber("/estimation/joint4pos_x", Float64)
+        self.joint4_estimation_z = rospy.Subscriber("/estimation/joint4pos_z", Float64)
+        self.ee_estimation_x = rospy.Subscriber("/estimation/ee_x", Float64)
+        self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64)
+
 
 
         # Factor of 1e-5 avoids division by 0 
@@ -175,9 +185,7 @@ class image_converter:
         #self.joint3_estimation = Float64()
         #self.joint3_estimation.data = self.estimate_joint3(cv_image1)
         #self.joint4_estimation = Float64()
-        #self.joint4_estimation.data = self.estimate_joint4(cv_image1)       
-
-
+        #self.joint4_estimation.data = self.estimate_joint4(cv_image1)
 
         im2 = cv2.imshow('window2', self.cv_image2)
         im1 = cv2.imshow('window1', self.cv_image1)
