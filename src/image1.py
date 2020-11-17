@@ -46,14 +46,14 @@ class image_converter:
         self.ee_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
 
         # Get the x and z coordinates from image2.py
-        self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64, update_j1_x)
-        self.joint1_estimation_z = rospy.Subscriber("/estimation/joint1pos_z", Float64, update_j1_z)
-        self.joint23_estimation_x = rospy.Subscriber("/estimation/joint23pos_x", Float64, update_j23_x)
-        self.joint23_estimation_z = rospy.Subscriber("/estimation/joint23pos_z", Float64, update_j23_z)
-        self.joint4_estimation_x = rospy.Subscriber("/estimation/joint4pos_x", Float64, update_j4_x)
-        self.joint4_estimation_z = rospy.Subscriber("/estimation/joint4pos_z", Float64, update_j4_z)
-        self.ee_estimation_x = rospy.Subscriber("/estimation/ee_x", Float64, update_ee_x)
-        self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64, update_ee_z)
+        self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64, self.update_j1_x)
+        self.joint1_estimation_z = rospy.Subscriber("/estimation/joint1pos_z", Float64, self.update_j1_z)
+        self.joint23_estimation_x = rospy.Subscriber("/estimation/joint23pos_x", Float64, self.update_j23_x)
+        self.joint23_estimation_z = rospy.Subscriber("/estimation/joint23pos_z", Float64, self.update_j23_z)
+        self.joint4_estimation_x = rospy.Subscriber("/estimation/joint4pos_x", Float64, self.update_j4_x)
+        self.joint4_estimation_z = rospy.Subscriber("/estimation/joint4pos_z", Float64, self.update_j4_z)
+        self.ee_estimation_x = rospy.Subscriber("/estimation/ee_x", Float64, self.update_ee_x)
+        self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64, self.update_ee_z)
 
 
     def update_j1_x(self,data):
