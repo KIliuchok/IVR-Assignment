@@ -231,6 +231,18 @@ class image_converter:
         else:
             self.ee_coordinates['z'] = red[1]
 
+    # Estimate angles between points
+    def estimate_angles_for_j1(self):
+        angle_xz = ((np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])))
+        angle_yz = ((np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])))
+        return np.array([angle_xz,angle_yz])
+
+    def estimate_angles_for_j23(self):
+        temp1 = self.estimate_angles_for_j1()
+        angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
+        angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
+        return np.array([angle_xz, angle_yz])
+
 
     ####################### CALLBACKS ##############################
 
@@ -261,15 +273,26 @@ class image_converter:
         self.estimate_and_update_ee(self.cv_image1)
         
 
-        print("x ", self.joint23_coordinates['x'])
-        print("y ", self.joint23_coordinates['y'])
-        print("z ", self.joint23_coordinates['z'])
+        print("x ", self.joint4_coordinates['x'])
+        print("y ", self.joint4_coordinates['y'])
+        print("z ", self.joint4_coordinates['z'])
+
+        yolo = self.estimate_angles_for_j23()
+        print("Real passed angle joint 2 ", self.joint2.data)
+        print("Estimated joint2 xz angle ", yolo[0])
+        print("Real passed angle joint 3 ", self.joint3.data)
+        print("Estimated joint3 yz andle ", yolo[1])
+        
+        self.joint2_estimation = Float64()
+        self.joint2_estimation.data = yolo[0]
+        self.joint3_estimation = Float64()
+        self.joint3_estimation.data = yolo[1]
 
         # joints estimations w/ computer vision
         #self.joint1_estimation = Float64()
         #self.joint1_estimation.data = self.estimate_joint1(cv_image1)  
-        self.joint2_estimation = Float64()
-        self.joint2_estimation.data = self.estimate_joint2(self.cv_image1, self.cv_image2)
+        #self.joint2_estimation = Float64()
+        #self.joint2_estimation.data = self.estimate_joint2(self.cv_image1, self.cv_image2)
         #self.joint3_estimation = Float64()
         #self.joint3_estimation.data = self.estimate_joint3(cv_image1)
         #self.joint4_estimation = Float64()
@@ -292,7 +315,7 @@ class image_converter:
             # Publish joint estimation w/ computer vision 
             #self.joint1_estimation_pub.publish(self.joint1_estimation)
             self.joint2_estimation_pub.publish(self.joint2_estimation)
-            #self.joint3_estimation_pub.publish(self.joint3_estimation)
+            self.joint3_estimation_pub.publish(self.joint3_estimation)
             #self.joint4_estimation_pub.publish(self.joint4_estimation)      
 
 
