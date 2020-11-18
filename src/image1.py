@@ -59,11 +59,17 @@ class image_converter:
     def update_j1_x(self,data):
     	 self.joint1_coordinates['x'] = data.data
 
+    def update_j1_y(self,data):
+         self.joint1_coordinates['y'] = data
+
     def update_j1_z(self,data):
     	 self.joint1_coordinates['z'] = data.data
 
     def update_j23_x(self,data):
     	 self.joint23_coordinates['x'] = data.data
+
+    def update_j23_y(self,data):
+         self.joint23_coordinates['y'] = data
 
     def update_j23_z(self,data):
     	 self.joint23_coordinates['z'] = data.data
@@ -71,14 +77,21 @@ class image_converter:
     def update_j4_x(self,data):
     	 self.joint4_coordinates['x'] = data.data
 
+    def update_j4_y(self,data):
+         self.joint4_coordinates['y'] = data
+
     def update_j4_z(self,data):
     	 self.joint4_coordinates['z'] = data.data
 
     def update_ee_x(self,data):
    	 self.ee_coordinates['x'] = data.data
 
+    def update_ee_y(self,data):
+         self.ee_coordinates['y'] = data
+
     def update_ee_z(self,data):
    	 self.ee_coordinates['z'] = data.data
+
         
     # Factor of 1e-5 avoids division by 0 
     def detect_red(self, image):
@@ -181,7 +194,42 @@ class image_converter:
     def estimate_joint4(self, image):
         pass
 
+    ############## Estimating y and z from camera 1 ################
+    def estimate_and_update_j1 (self,image):
+        yellow = self.detect_yellow(image)
+        self.joint1_coordinates['y'] = yellow[0]
+        if not self.joint1_coordinates['z'] == 0:
+            temp = self.joint1_coordinates['z'] + yellow[1]
+            self.joint1_coordinates['z'] = temp/2
+        else:
+            self.joint1_coordinates['z'] = yellow[1]
 
+    def estimate_and_update_j23(self,image):
+        blue = self.detect_blue(image)
+        self.joint23_coordinates['y'] = blue[0]
+        if not self.joint23_coordinates['z'] == 0:
+            temp = self.joint23_coordinates['z'] + blue[1]
+            self.joint23_coordinates['z'] = temp/2
+        else:
+            self.joint23_coordinates['z'] = blue[1]
+
+    def estimate_and_update_j4(self,image):
+        green = self.detect_green(image)
+        self.joint4_coordinates['y'] = green[0]
+        if not self.joint4_coordinates['z'] == 0:
+            temp = self.joint4_coordinates['z'] + green[1]
+            self.joint4_coordinates['z'] = temp/2
+        else:
+            self.joint4_coordinates['z'] = green[1]
+
+    def estimate_and_update_ee(self,image):
+        red = self.detect_red(image)
+        self.ee_coordinates['y'] = red[0]
+        if not self.ee_coordinates['z'] == 0:
+            temp = self.ee_coordinates['z'] + red[1]
+            self.ee_coordinates['z'] = temp/2
+        else:
+            self.ee_coordinates['z'] = red[1]
 
 
     ####################### CALLBACKS ##############################
@@ -205,6 +253,13 @@ class image_converter:
         self.joint3.data = self.trajectory_joint3(self.cv_image1)
         self.joint4 = Float64()
         self.joint4.data = self.trajectory_joint4(self.cv_image1)
+
+        # Get the y and z coordinates from camera 1 and update them accordingly 
+        self.estimate_and_update_j1(self.cv_image1)
+        self.estimate_and_update_j23(self.cv_image1)
+        self.estimate_and_update_j4(self.cv_image1)
+        self.estimate_and_update_ee(self.cv_image1)
+        
 
         print("x ", self.joint23_coordinates['x'])
         print("y ", self.joint23_coordinates['y'])
