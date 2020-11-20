@@ -37,40 +37,66 @@ class image_converter:
     self.rate = rospy.Rate(20)
 
   def detect_red(self, image):
+    # Detect the red pixels
     mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    M = cv2.moments(mask)
-    cx = int(M['m10'] / (M['m00'] + 1e-5))
-    cy = int(M['m01'] / (M['m00'] + 1e-5))
-    return np.array([cx, cy])
+    # Using contours find a centroid
+    ret, threshold = cv2.threshold(mask, 127, 255, 0)
+    contours, hierarchy = cv2.findContours(threshold, 1, 2)
+    # If no contours are present, then blob is obstructed and hence try to find the centroid of the next blob down the line
+    if len(contours) == 0:
+      return self.detect_green(image)
+    else:
+      M = cv2.moments(contours[0])
+      cx = int(M['m10'] / (M['m00'] + 1e-5))
+      cy = int(M['m01'] / (M['m00'] + 1e-5))
+      return np.array([cx, cy])
 
   def detect_blue(self, image):
     mask = cv2.inRange(image, (100, 0, 0), (255, 0, 0))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    M = cv2.moments(mask)
-    cx = int(M['m10'] / (M['m00'] + 1e-5))
-    cy = int(M['m01'] / (M['m00'] + 1e-5))
-    return np.array([cx, cy])
+    
+    ret, threshold = cv2.threshold(mask, 127, 255, 0)
+    contours, hierarchy = cv2.findContours(threshold, 1, 2)
+    if len(contours) == 0:
+      return self.detect_green(image)
+    else:
+      M = cv2.moments(contours[0])
+      cx = int(M['m10'] / (M['m00'] + 1e-5))
+      cy = int(M['m01'] / (M['m00'] + 1e-5))
+      return np.array([cx, cy])
 
   def detect_green(self, image):
     mask = cv2.inRange(image, (0, 100, 0), (0, 255, 0))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    M = cv2.moments(mask)
-    cx = int(M['m10'] / (M['m00'] + 1e-5))
-    cy = int(M['m01'] / (M['m00'] + 1e-5))
-    return np.array([cx, cy])
+
+    ret, threshold = cv2.threshold(mask, 127, 255, 0)
+    contours, hierarchy = cv2.findContours(threshold, 1, 2)
+    if len(contours) == 0:
+      return self.detect_blue(image)
+    else:
+      M = cv2.moments(contours[0])
+      cx = int(M['m10'] / (M['m00'] + 1e-5))
+      cy = int(M['m01'] / (M['m00'] + 1e-5))
+      return np.array([cx, cy])
 
   def detect_yellow(self, image):
     mask = cv2.inRange(image, (0, 100, 100), (0, 255, 255))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    M = cv2.moments(mask)
-    cx = int(M['m10'] / (M['m00'] + 1e-5))
-    cy = int(M['m01'] / (M['m00'] + 1e-5))
-    return np.array([cx, cy])
+    
+    ret, threshold = cv2.threshold(mask, 127, 255, 0)
+    contours, hierarchy = cv2.findContours(threshold, 1, 2)
+    if len(contours) == 0:
+      return self.detect_blue(image)
+    else:
+      M = cv2.moments(contours[0])
+      cx = int(M['m10'] / (M['m00'] + 1e-5))
+      cy = int(M['m01'] / (M['m00'] + 1e-5))
+      return np.array([cx, cy])
 
 
   # Receive data, process it, and publish
