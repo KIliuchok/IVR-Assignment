@@ -44,6 +44,7 @@ class image_converter:
         self.joint23_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
         self.joint4_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
         self.ee_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.pixel2m = 0
 
         # Get the x and z coordinates from image2.py
         self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64, self.update_j1_x)
@@ -97,41 +98,68 @@ class image_converter:
 
         
     # Factor of 1e-5 avoids division by 0 
-    def detect_red(self, image):
+    def detect_red(self,image):
+        # Detect the red pixels 
         mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
-        kernel = np.ones((5, 5), np.uint8)
+        kernel = np.ones((5 ,5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
+        # Using contours and its moments find a centroid
+        red, threshold = cv2.threshold(mask, 127, 255, 0)
+        contours, hierarchy = cv2.findContours(threshold, 1, 2)
+        # If no contours are present, then blob is obstructe3d and hence try to find the centeroid of the next blob down the line
+        if len(contours) == 0:
+            return self.detect_green(image)
+        else:
+            M = cv2.moments(contours[0])
+            cx = int(M['m10'] / (M['m00'] + 1e-5))
+            cy = int(M['m01'] / (M['m00'] + 1e-5))
+            return np.array([cx, cy])
 
     def detect_blue(self, image):
         mask = cv2.inRange(image, (100, 0, 0), (255, 0, 0))
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
+
+        ret, threshold = cv2.threshold(mask, 127, 255, 0)
+        contours, hierarchy = cv2.findContours(threshold, 1, 2)
+        if len(contours) == 0:
+            return self.detect_yellow(image)
+        else:
+            M = cv2.moments(contours[0])
+            cx = int(M['m10'] / (M['m00'] + 1e-5))
+            cy = int(M['m01'] / (M['m00'] + 1e-5))
+            return np.array([cx, cy])
 
     def detect_green(self, image):
         mask = cv2.inRange(image, (0, 100, 0), (0, 255, 0))
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
+
+        ret, threshold = cv2.threshold(mask, 127, 255, 0)
+        contours, hierarchy = cv2.findContours(threshold, 1, 2)
+
+        if len(contours) == 0:
+            return self.detect_blue(image)
+        else:
+            M = cv2.moments(contours[0])
+            cx = int(M['m10'] / (M['m00'] + 1e-5))
+            cy = int(M['m01'] / (M['m00'] + 1e-5))
+            return np.array([cx, cy])
 
     def detect_yellow(self, image):
         mask = cv2.inRange(image, (0, 100, 100), (0, 255, 255))
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
+
+        ret, threshold = cv2.threshold(mask, 127, 255, 0)
+        contours, hierarchy = cv2.findContours(threshold, 1, 2)
+        if len(contours) == 0:
+            return self.detect_blue(image)
+        else:
+            M = cv2.moments(contours[0])
+            cx = int(M['m10'] / (M['m00'] + 1e-5))
+            cy = int(M['m01'] / (M['m00'] + 1e-5))
+            return np.array([cx, cy])
 
 
     def remove_orange(self, image):
@@ -181,12 +209,15 @@ class image_converter:
         return new_image
 
 
-    def pixel2meter(self, image):
-        circle1Pos = self.detect_blue(image)
-        circle2Pos = self.detect_green(image)
-        dist = np.sum((circle1Pos - circle2Pos) ** 2)
-        return 3 / np.sqrt(dist)
 
+
+    def pixel2meter(self,image):
+        # Center of each colored blob
+        if (self.joint1_coordinates['x'] != 0 and self.joint23_coordinates['x'] != 0):
+            circle1 = np.array[(self.joint1_coordinates['x'], self.joint1_coordinates['y'])]
+            circle2 = np.array[(self.joint23_coordinates['x'], self.joint23_coordinates['y'])]
+            dist = np.sum((circle1 - circle2)**2)
+            return 2.5 / np.sqrt(dist)
 
     ################### TRAJECTORIES ###################
 
@@ -212,7 +243,7 @@ class image_converter:
     def estimate_and_update_j1 (self,image):
         yellow = self.detect_yellow(image)
         self.joint1_coordinates['y'] = yellow[0]
-        if not self.joint1_coordinates['z'] == 0:
+        if not (self.joint1_coordinates['z'] == 0):
             temp = self.joint1_coordinates['z'] + yellow[1]
             self.joint1_coordinates['z'] = temp/2
         else:
@@ -221,7 +252,7 @@ class image_converter:
     def estimate_and_update_j23(self,image):
         blue = self.detect_blue(image)
         self.joint23_coordinates['y'] = blue[0]
-        if not self.joint23_coordinates['z'] == 0:
+        if not (self.joint23_coordinates['z'] == 0):
             temp = self.joint23_coordinates['z'] + blue[1]
             self.joint23_coordinates['z'] = temp/2
         else:
@@ -230,7 +261,7 @@ class image_converter:
     def estimate_and_update_j4(self,image):
         green = self.detect_green(image)
         self.joint4_coordinates['y'] = green[0]
-        if not self.joint4_coordinates['z'] == 0:
+        if not (self.joint4_coordinates['z'] == 0):
             temp = self.joint4_coordinates['z'] + green[1]
             self.joint4_coordinates['z'] = temp/2
         else:
@@ -239,22 +270,29 @@ class image_converter:
     def estimate_and_update_ee(self,image):
         red = self.detect_red(image)
         self.ee_coordinates['y'] = red[0]
-        if not self.ee_coordinates['z'] == 0:
+        if not (self.ee_coordinates['z'] == 0):
             temp = self.ee_coordinates['z'] + red[1]
             self.ee_coordinates['z'] = temp/2
         else:
             self.ee_coordinates['z'] = red[1]
 
-    # Estimate angles between points
+    ########### Estimate angles between points ############
     def estimate_angles_for_j1(self):
-        angle_xz = ((np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])))
-        angle_yz = ((np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])))
+        angle_xz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])
+        angle_yz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])
         return np.array([angle_xz,angle_yz])
-
+      
+    # What is the difference between the conditionals? They seem to do the same thing
     def estimate_angles_for_j23(self):
         temp1 = self.estimate_angles_for_j1()
-        angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
-        angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
+        if (self.joint4_coordinates['x'] - self.joint23_coordinates['x'] < 0):
+            angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
+        else:
+            angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
+        if (self.joint4_coordinates['y'] - self.joint23_coordinates['y'] < 0):
+            angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
+        else:
+            angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
         return np.array([angle_xz, angle_yz])
 
 
@@ -268,6 +306,8 @@ class image_converter:
         except CvBridgeError as e:
             print(e)
 
+        if not self.pixel2m == 0:
+            self.pixel2m = self.pixel2meter(cv_image1)
 
         # joints given trajectories
     #   self.joint1 = Float64()
@@ -280,12 +320,15 @@ class image_converter:
         self.joint4.data = self.trajectory_joint4(self.cv_image1)
 
         # Get the y and z coordinates from camera 1 and update them accordingly 
-        # Remove orange objects first
-        self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
-        self.estimate_and_update_j1(self.cv_image1_no_orange)
-        self.estimate_and_update_j23(self.cv_image1_no_orange)
-        self.estimate_and_update_j4(self.cv_image1_no_orange)
-        self.estimate_and_update_ee(self.cv_image1_no_orange)
+
+        #//TODO: decide which method to use for obstruction
+        # remove_orange() Vs. contour + centroids method
+
+        #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
+        self.estimate_and_update_j1(self.cv_image1)
+        self.estimate_and_update_j23(self.cv_image1)
+        self.estimate_and_update_j4(self.cv_image1)
+        self.estimate_and_update_ee(self.cv_image1)
         
 
         #print("x ", self.joint4_coordinates['x'])
@@ -307,7 +350,7 @@ class image_converter:
 
 
         im1 = cv2.imshow('window1', self.cv_image1)
-        im1_no_orange = cv2.imshow('no_orange camera1', self.cv_image1_no_orange)
+        #im1_no_orange = cv2.imshow('no_orange camera1', self.cv_image1_no_orange)
         cv2.waitKey(1)
         # Publish the results
         try:
@@ -328,7 +371,7 @@ class image_converter:
         except CvBridgeError as e:
             print(e)
 
-    
+
 
 # call the class
 def main(args):
