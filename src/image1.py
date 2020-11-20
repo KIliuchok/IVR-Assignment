@@ -56,6 +56,9 @@ class image_converter:
         self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64, self.update_ee_z)
 
 
+        self.rate = rospy.Rate(20)
+
+
     def update_j1_x(self,data):
     	 self.joint1_coordinates['x'] = data.data
 
@@ -130,6 +133,54 @@ class image_converter:
         cy = int(M['m01'] / (M['m00'] + 1e-5))
         return np.array([cx, cy])
 
+
+    def remove_orange(self, image):
+        mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
+        kernel = np.ones((5, 5), np.uint8)
+        mask = cv2.dilate(mask, kernel, iterations=1)
+
+        orange_objects_pixels = cv2.findNonZero(mask)
+        orange_object_coordinates = []
+
+        for i in range(orange_objects_pixels.shape[0]):
+            pixel = orange_objects_pixels[i]
+            for j in range(pixel.shape[0]):
+                y = pixel[j][0]
+                x = pixel[j][1]
+                orange_object_coordinates.append([x, y])
+
+        new_image = image.copy()
+
+        # Using coordinates of orange pixels, check what color is at that position in the original image (original_color)
+      
+        # 3 CASES: 
+        # 1 - original_color != orange -> joint is in front of orange objects -> don't do anything
+
+        # if original_color == orange: 
+            # 2 - joints are not overalpping with orange objects -> replace pixel color with grey 
+            # 3 - joints are behind orange objects -> replace pixel color with appropriate color (check if joint global coordinates are in +- pixel range)
+
+        for coord in orange_object_coordinates:
+            y, x = coord[0], coord[1]
+            original_color = image[y, x]
+            b = original_color[0]
+            g = original_color[1]
+            r = original_color[2]
+
+            if ((b >= 5 and b <= 10) and (g >= 50 and g <= 80)):      # orange pixel (either no overalap or joints behind orange objects)
+                new_image[y, x] = [179, 179, 179] 
+                ee_z = self.ee_coordinates['z']
+                ee_y = self.ee_coordinates['y']
+                joint4_z = self.joint4_coordinates['z']
+                joint4_y = self.joint4_coordinates['y']
+                if (ee_y > x-10 and ee_y < x+10 and ee_z > y-10 and ee_z < y+10):
+                    new_image[y, x] = [1,1,120]
+                elif (joint4_y > x-20 and joint4_y < x+20 and joint4_z > y-20 and joint4_z < y+20):
+                    new_image[y, x] = [1, 120, 1]
+
+        return new_image
+
+
     def pixel2meter(self, image):
         circle1Pos = self.detect_blue(image)
         circle2Pos = self.detect_green(image)
@@ -156,43 +207,6 @@ class image_converter:
 
 
     ################### JOINT ESTIMATION W/ COMPUTER VISION ###################
-
-    def estimate_joint1(self, image):
-        pass
-
-
-    # Switch to image2 when green approaches xz plane
-    def estimate_joint2(self, image1, image2):
-        center_blue = self.detect_blue(image1)
-        center_green1 = self.detect_green(image1)
-        #center_green2 = self.detect_green(image2)
-
-       
-        delta_y = center_blue[0] - center_green1[0]
-        delta_x = center_blue[1] - center_green1[1]
-
-        print("Difference x - camera1 ", delta_x)
-        print("Difference y - camera1", delta_y)
-        
-        j_angle = np.arctan2(delta_y, delta_x)          
-
-
-        print("Blue (y,x) ", center_blue[0], ' ', center_blue[1])
-        print("Green 1 (y,x) ", center_green1[0], ' ', center_green1[1])
-        print("Difference x ", delta_x)
-        print("Difference y ", delta_y)
-        print("Angle ", j_angle)
-        print('-' * 20)
-
-        return j_angle
-
-
-    def estimate_joint3(self, image):
-        pass
-
-
-    def estimate_joint4(self, image):
-        pass
 
     ############## Estimating y and z from camera 1 ################
     def estimate_and_update_j1 (self,image):
@@ -251,7 +265,6 @@ class image_converter:
         # Receive the image
         try:
             self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
-            rospy.Subscriber("camera2/robot/image_raw", Image, self.callback2)
         except CvBridgeError as e:
             print(e)
 
@@ -267,44 +280,37 @@ class image_converter:
         self.joint4.data = self.trajectory_joint4(self.cv_image1)
 
         # Get the y and z coordinates from camera 1 and update them accordingly 
-        self.estimate_and_update_j1(self.cv_image1)
-        self.estimate_and_update_j23(self.cv_image1)
-        self.estimate_and_update_j4(self.cv_image1)
-        self.estimate_and_update_ee(self.cv_image1)
+        # Remove orange objects first
+        self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
+        self.estimate_and_update_j1(self.cv_image1_no_orange)
+        self.estimate_and_update_j23(self.cv_image1_no_orange)
+        self.estimate_and_update_j4(self.cv_image1_no_orange)
+        self.estimate_and_update_ee(self.cv_image1_no_orange)
         
 
-        print("x ", self.joint4_coordinates['x'])
-        print("y ", self.joint4_coordinates['y'])
-        print("z ", self.joint4_coordinates['z'])
+        #print("x ", self.joint4_coordinates['x'])
+        #print("y ", self.joint4_coordinates['y'])
+        #print("z ", self.joint4_coordinates['z'])
 
-        yolo = self.estimate_angles_for_j23()
-        print("Real passed angle joint 2 ", self.joint2.data)
-        print("Estimated joint2 xz angle ", yolo[0])
-        print("Real passed angle joint 3 ", self.joint3.data)
-        print("Estimated joint3 yz andle ", yolo[1])
+        joint23_estimation = self.estimate_angles_for_j23()
+        #print("Real passed angle joint 2 ", self.joint2.data)
+        #print("Estimated joint2 xz angle ", joint23_estimation[0])
+        ##print(" ")
+        #print("Real passed angle joint 3 ", self.joint3.data)
+        #print("Estimated joint3 yz andle ", joint23_estimation[1])
+        #print('-'*20)
         
         self.joint2_estimation = Float64()
-        self.joint2_estimation.data = yolo[0]
+        self.joint2_estimation.data = joint23_estimation[0]
         self.joint3_estimation = Float64()
-        self.joint3_estimation.data = yolo[1]
+        self.joint3_estimation.data = joint23_estimation[1]
 
-        # joints estimations w/ computer vision
-        #self.joint1_estimation = Float64()
-        #self.joint1_estimation.data = self.estimate_joint1(cv_image1)  
-        #self.joint2_estimation = Float64()
-        #self.joint2_estimation.data = self.estimate_joint2(self.cv_image1, self.cv_image2)
-        #self.joint3_estimation = Float64()
-        #self.joint3_estimation.data = self.estimate_joint3(cv_image1)
-        #self.joint4_estimation = Float64()
-        #self.joint4_estimation.data = self.estimate_joint4(cv_image1)
 
-        im2 = cv2.imshow('window2', self.cv_image2)
         im1 = cv2.imshow('window1', self.cv_image1)
+        im1_no_orange = cv2.imshow('no_orange camera1', self.cv_image1_no_orange)
         cv2.waitKey(1)
         # Publish the results
         try:
-            rate = rospy.Rate(20)
-            rate.sleep()
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             # Move joints by following given trajectories
             #self.robot_joint1_pub.publish(self.joint1)
@@ -322,14 +328,7 @@ class image_converter:
         except CvBridgeError as e:
             print(e)
 
-
-    # Receive data from camera2
-    def callback2(self, data):
-        try:
-            self.cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
-        except CvBridgeError as e: 
-            print(e)
-
+    
 
 # call the class
 def main(args):
