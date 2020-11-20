@@ -160,7 +160,7 @@ class image_converter:
 
     def pixel2meter(self,image):
         # Center of each colored blob
-        if (self.joint1_coordinates['y'] != 0 and self.joint23_coordinates['y'] != 0):
+        if (self.joint1_coordinates['x'] != 0 and self.joint23_coordinates['x'] != 0):
             circle1 = np.array[(self.joint1_coordinates['x'], self.joint1_coordinates['y'])]
             circle2 = np.array[(self.joint23_coordinates['x'], self.joint23_coordinates['y'])]
             dist = np.sum((circle1 - circle2)**2)
