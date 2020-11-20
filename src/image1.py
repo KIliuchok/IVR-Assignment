@@ -44,6 +44,7 @@ class image_converter:
         self.joint23_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
         self.joint4_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
         self.ee_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.pixel2m = 0
 
         # Get the x and z coordinates from image2.py
         self.joint1_estimation_x = rospy.Subscriber("/estimation/joint1pos_x", Float64, self.update_j1_x)
@@ -157,6 +158,13 @@ class image_converter:
             cy = int(M['m01'] / (M['m00'] + 1e-5))
             return np.array([cx, cy])
 
+    def pixel2meter(self,image):
+        # Center of each colored blob
+        if (self.joint1_coordinates['y'] != 0 and self.joint23_coordinates['y'] != 0):
+            circle1 = np.array[(self.joint1_coordinates['x'], self.joint1_coordinates['y'])]
+            circle2 = np.array[(self.joint23_coordinates['x'], self.joint23_coordinates['y'])]
+            dist = np.sum((circle1 - circle2)**2)
+            return 2.5 / np.sqrt(dist)
 
     ################### TRAJECTORIES ###################
 
@@ -282,6 +290,8 @@ class image_converter:
         except CvBridgeError as e:
             print(e)
 
+        if not self.pixel2m == 0:
+            self.pixel2m = self.pixel2meter(cv_image1)
 
         # joints given trajectories
     #   self.joint1 = Float64()
