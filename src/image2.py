@@ -4,6 +4,7 @@ import roslib
 import sys
 import rospy
 import cv2
+import os
 import numpy as np
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
@@ -24,6 +25,7 @@ class image_converter:
     # initialize the bridge between openCV and ROS
     self.bridge = CvBridge()
     
+    self.template = cv2.imread(os.getcwd() + '/sphere.png', 0)
 
     self.robot_joint1_x_estimation = rospy.Publisher("/estimation/joint1pos_x", Float64, queue_size=10)
     self.robot_joint23_x_estimation = rospy.Publisher("/estimation/joint23pos_x", Float64, queue_size=10)
@@ -33,70 +35,80 @@ class image_converter:
     self.robot_joint4_z_estimation = rospy.Publisher("/estimation/joint4pos_z", Float64, queue_size=10)
     self.robot_ee_x_estimation = rospy.Publisher("/estimation/ee_x", Float64, queue_size=10)
     self.robot_ee_z_estimation = rospy.Publisher("/estimation/ee_z", Float64, queue_size=10)
+    self.robot_target_x_estimation = rospy.Publisher("estimation/target_x/camera2", Float64, queue_size=10)
+    self.robot_target_z_estimation = rospy.Publisher("estimation/target_z/camera2", Float64, queue_size=10)
+
+    self.pixel2meter_ratio = 0
 
     self.rate = rospy.Rate(20)
 
   def detect_red(self, image):
-    # Detect the red pixels
     mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    # Using contours find a centroid
-    ret, threshold = cv2.threshold(mask, 127, 255, 0)
-    contours, hierarchy = cv2.findContours(threshold, 1, 2)
-    # If no contours are present, then blob is obstructed and hence try to find the centroid of the next blob down the line
-    if len(contours) == 0:
-      return self.detect_green(image)
-    else:
-      M = cv2.moments(contours[0])
-      cx = int(M['m10'] / (M['m00'] + 1e-5))
-      cy = int(M['m01'] / (M['m00'] + 1e-5))
-      return np.array([cx, cy])
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
 
   def detect_blue(self, image):
     mask = cv2.inRange(image, (100, 0, 0), (255, 0, 0))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    
-    ret, threshold = cv2.threshold(mask, 127, 255, 0)
-    contours, hierarchy = cv2.findContours(threshold, 1, 2)
-    if len(contours) == 0:
-      return self.detect_green(image)
-    else:
-      M = cv2.moments(contours[0])
-      cx = int(M['m10'] / (M['m00'] + 1e-5))
-      cy = int(M['m01'] / (M['m00'] + 1e-5))
-      return np.array([cx, cy])
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
 
   def detect_green(self, image):
     mask = cv2.inRange(image, (0, 100, 0), (0, 255, 0))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-
-    ret, threshold = cv2.threshold(mask, 127, 255, 0)
-    contours, hierarchy = cv2.findContours(threshold, 1, 2)
-    if len(contours) == 0:
-      return self.detect_blue(image)
-    else:
-      M = cv2.moments(contours[0])
-      cx = int(M['m10'] / (M['m00'] + 1e-5))
-      cy = int(M['m01'] / (M['m00'] + 1e-5))
-      return np.array([cx, cy])
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
 
   def detect_yellow(self, image):
     mask = cv2.inRange(image, (0, 100, 100), (0, 255, 255))
     kernel = np.ones((5, 5), np.uint8)
     mask = cv2.dilate(mask, kernel, iterations=3)
-    
-    ret, threshold = cv2.threshold(mask, 127, 255, 0)
-    contours, hierarchy = cv2.findContours(threshold, 1, 2)
-    if len(contours) == 0:
-      return self.detect_blue(image)
-    else:
-      M = cv2.moments(contours[0])
-      cx = int(M['m10'] / (M['m00'] + 1e-5))
-      cy = int(M['m01'] / (M['m00'] + 1e-5))
-      return np.array([cx, cy])
+    M = cv2.moments(mask)
+    cx = int(M['m10'] / (M['m00'] + 1e-5))
+    cy = int(M['m01'] / (M['m00'] + 1e-5))
+    return np.array([cx, cy])
+
+  def detect_orange(self, image):
+    mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.dilate(mask, kernel, iterations=1)
+    return mask
+
+  def detect_target(self, image):
+    mask = self.detect_orange(image)
+    method = eval('cv2.TM_SQDIFF')
+    w, h = self.template.shape[::-1]
+    res = cv2.matchTemplate(mask, self.template, method)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    top_left = min_loc
+    x = top_left[0] + (w/2)
+    z = top_left[1] + (h/2)
+    # Position of the target must be given wrt to base frame (yellow sphere) in meters
+    yellow = self.detect_yellow(image)
+    x_yellow = yellow[0]
+    z_yellow = yellow[1]
+    delta_x = self.pixel2meter_ratio * (x - x_yellow)
+    delta_z = self.pixel2meter_ratio * (z_yellow - z)
+    return np.array([delta_x, delta_z])
+
+
+  def pixel2meter(self, image):
+    yellow = self.detect_yellow(image)
+    blue = self.detect_blue(image)
+    dist = np.sum((yellow - blue)**2)
+    return 2.5 / np.sqrt(dist)
+
+
 
 
   # Receive data, process it, and publish
@@ -106,6 +118,10 @@ class image_converter:
       self.cv_image2 = self.bridge.imgmsg_to_cv2(data, "bgr8")
     except CvBridgeError as e:
       print(e)
+
+
+    self.pixel2meter_ratio = self.pixel2meter(self.cv_image2)
+
     # Uncomment if you want to save the image
     #cv2.imwrite('image_copy.png', cv_image)
     im2=cv2.imshow('window2', self.cv_image2)
@@ -135,6 +151,12 @@ class image_converter:
     self.ee_pos_z = Float64()
     self.ee_pos_z = red[1]
 
+    target = self.detect_target(self.cv_image2)
+    self.target_x = Float64()
+    self.target_x.data = target[0]
+    self.target_z = Float64()
+    self.target_z.data = target[1]
+
 
     # Publish the results
     try: 
@@ -151,6 +173,10 @@ class image_converter:
 
       self.robot_ee_x_estimation.publish(self.ee_pos_x)
       self.robot_ee_z_estimation.publish(self.ee_pos_z)
+
+      self.robot_target_x_estimation.publish(self.target_x)
+      self.robot_target_z_estimation.publish(self.target_z)
+
     except CvBridgeError as e:
       print(e)
 
