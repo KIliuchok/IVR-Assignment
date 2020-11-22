@@ -314,18 +314,16 @@ class image_converter:
         angle_yz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])
         return np.array([angle_xz,angle_yz])
       
-    # What is the difference between the conditionals? They seem to do the same
     def estimate_angles_for_j23(self):
         temp1 = self.estimate_angles_for_j1()
-        if (self.joint4_coordinates['x'] - self.joint23_coordinates['x'] < 0):
-            angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
-        else:
-            angle_xz = -np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
-        if (self.joint4_coordinates['y'] - self.joint23_coordinates['y'] < 0):
-            angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
-        else:
-            angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
+        angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) + np.pi/2
+        angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y'])
         return np.array([angle_xz, angle_yz])
+
+    def estimate_angles_for_j4(self):
+        temp2 = self.estimate_angles_for_j23()
+        angle_xz = np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.ee_coordinates['x'] - self.joint4_coordinates['x']) - temp2[0] + np.pi/2
+        return angle_xz
 
 
     ####################### CALLBACKS ##############################
@@ -369,11 +367,14 @@ class image_converter:
         
 
         joint23_estimation = self.estimate_angles_for_j23()
+        joint4_estimation_x = self.estimate_angles_for_j4()
         
         self.joint2_estimation = Float64()
         self.joint2_estimation.data = joint23_estimation[0]
         self.joint3_estimation = Float64()
         self.joint3_estimation.data = joint23_estimation[1]
+        self.joint4_estimation = Float64()
+        self.joint4_estimation.data = joint4_estimation_x
 
         self.target_x = Float64()
         self.target_y = Float64()
@@ -405,7 +406,7 @@ class image_converter:
             #self.joint1_estimation_pub.publish(self.joint1_estimation)
             self.joint2_estimation_pub.publish(self.joint2_estimation)
             self.joint3_estimation_pub.publish(self.joint3_estimation)
-            #self.joint4_estimation_pub.publish(self.joint4_estimation)
+            self.joint4_estimation_pub.publish(self.joint4_estimation)
             self.target_x_pub.publish(self.target_x)
             self.target_y_pub.publish(self.target_y)
             self.target_z_pub.publish(self.target_z)
