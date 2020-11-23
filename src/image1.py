@@ -77,17 +77,11 @@ class image_converter:
     def update_j1_x(self,data):
         self.joint1_coordinates['x'] = data.data
 
-    def update_j1_y(self,data):
-        self.joint1_coordinates['y'] = data
-
     def update_j1_z(self,data):
     	self.joint1_coordinates['z'] = data.data
 
     def update_j23_x(self,data):
     	self.joint23_coordinates['x'] = data.data
-
-    def update_j23_y(self,data):
-        self.joint23_coordinates['y'] = data
 
     def update_j23_z(self,data):
     	self.joint23_coordinates['z'] = data.data
@@ -95,17 +89,11 @@ class image_converter:
     def update_j4_x(self,data):
     	self.joint4_coordinates['x'] = data.data
 
-    def update_j4_y(self,data):
-        self.joint4_coordinates['y'] = data
-
     def update_j4_z(self,data):
     	self.joint4_coordinates['z'] = data.data
 
     def update_ee_x(self,data):
    	    self.ee_coordinates['x'] = data.data
-
-    def update_ee_y(self,data):
-        self.ee_coordinates['y'] = data
 
     def update_ee_z(self,data):
    	    self.ee_coordinates['z'] = data.data
@@ -316,14 +304,20 @@ class image_converter:
       
     def estimate_angles_for_j23(self):
         temp1 = self.estimate_angles_for_j1()
+        if (self.joint4_coordinates['z'] > self.joint23_coordinates['z']):
+            angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2 + np.pi
+        else:
+            angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2
         angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) + np.pi/2
-        angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y'])
         return np.array([angle_xz, angle_yz])
 
     def estimate_angles_for_j4(self):
         temp2 = self.estimate_angles_for_j23()
-        angle_xz = np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.ee_coordinates['x'] - self.joint4_coordinates['x']) - temp2[0] + np.pi/2
-        return angle_xz
+        if (self.ee_coordinates['z'] > self.joint4_coordinates['z']):
+            angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.joint4_coordinates['y'] - self.ee_coordinates['y']) + np.pi/2
+        else:
+            angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.ee_coordinates['y'] - self.joint4_coordinates['y']) - temp2[1] + np.pi/2 - np.pi
+        return angle_yz
 
 
     ####################### CALLBACKS ##############################
@@ -353,6 +347,10 @@ class image_converter:
         self.joint4 = Float64()
         self.joint4.data = self.trajectory_joint4(self.cv_image1)
 
+
+        
+
+
         # Get the y and z coordinates from camera 1 and update them accordingly 
 
         #//TODO: decide which method to use for obstruction
@@ -370,9 +368,9 @@ class image_converter:
         joint4_estimation_x = self.estimate_angles_for_j4()
         
         self.joint2_estimation = Float64()
-        self.joint2_estimation.data = joint23_estimation[0]
+        self.joint2_estimation.data = joint23_estimation[1]
         self.joint3_estimation = Float64()
-        self.joint3_estimation.data = joint23_estimation[1]
+        self.joint3_estimation.data = joint23_estimation[0]
         self.joint4_estimation = Float64()
         self.joint4_estimation.data = joint4_estimation_x
 
@@ -383,14 +381,22 @@ class image_converter:
         self.target_y.data = self.target_coordinates['y']
         self.target_z.data = self.target_coordinates['z']
 
+        print("Joint2 sent ", self.joint2.data)
+        print("Joint2 estimated ", self.joint2_estimation.data)
+        print("Joint3 sent ", self.joint3.data)
+        print("Joint3 estimated ", self.joint3_estimation.data)
+        print("Joint4 sent ", self.joint4.data)
+        print("Joint4 estimated ", self.joint4_estimation.data)
+        print(" ")
+
 
 #########################################################
 #####################################################
 #######################################
-    
-
-        im1 = cv2.imshow('window1', self.cv_image1)
-        orange_binary_image = cv2.imshow('orange mask', self.orange_binary_mask)
+        
+        # Show image
+        #im1 = cv2.imshow('window1', self.cv_image1)
+        #orange_binary_image = cv2.imshow('orange mask', self.orange_binary_mask)
         #im1_no_orange = cv2.imshow('no_orange camera1', self.cv_image1_no_orange)
         cv2.waitKey(1)
         # Publish the results
