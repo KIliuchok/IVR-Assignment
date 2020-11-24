@@ -6,7 +6,6 @@ import rospy
 import cv2
 import numpy as np
 import os
-from sympy import *
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
@@ -65,7 +64,11 @@ class image_converter:
         self.target_estimation_z = rospy.Subscriber("estimation/target_z/camera2", Float64, self.update_target_z, queue_size=10)
 
         # template for chamfer matching
-        self.template = cv2.imread(os.getcwd() + '/sphere.png', 0)
+        self.template_orange_sphere = cv2.imread(os.getcwd() + '/sphere.png', 0)
+        self.template_blue = cv2.imread(os.getcwd() + '/template_blue.png', 0)
+        self.template_yellow = cv2.imread(os.getcwd() + '/template_yellow.png', 0)
+        self.template_green = cv2.imread(os.getcwd() + '/template_green.png', 0)
+        self.template_red = cv2.imread(os.getcwd() + '/template_red.png', 0)
 
         # Target detection publishers
         self.target_y_pub = rospy.Publisher("/target_estimation/y", Float64, queue_size=10)
@@ -75,14 +78,9 @@ class image_converter:
         self.rate = rospy.Rate(20)
 
 
-        self.flag_test = False
-
 
     def update_j1_x(self,data):
         self.joint1_coordinates['x'] = data.data
-
-    def update_j1_y(self,data):
-        self.joint1_coordinates['y'] = data
 
     def update_j1_z(self,data):
     	self.joint1_coordinates['z'] = data.data
@@ -90,26 +88,17 @@ class image_converter:
     def update_j23_x(self,data):
     	self.joint23_coordinates['x'] = data.data
 
-    def update_j23_y(self,data):
-        self.joint23_coordinates['y'] = data
-
     def update_j23_z(self,data):
     	self.joint23_coordinates['z'] = data.data
 
     def update_j4_x(self,data):
     	self.joint4_coordinates['x'] = data.data
 
-    def update_j4_y(self,data):
-        self.joint4_coordinates['y'] = data
-
     def update_j4_z(self,data):
     	self.joint4_coordinates['z'] = data.data
 
     def update_ee_x(self,data):
    	    self.ee_coordinates['x'] = data.data
-
-    def update_ee_y(self,data):
-        self.ee_coordinates['y'] = data
 
     def update_ee_z(self,data):
    	    self.ee_coordinates['z'] = data.data
@@ -120,74 +109,99 @@ class image_converter:
     def update_target_z(self, data):
         self.target_coordinates['z'] = data.data
 
-        
-    # Factor of 1e-5 avoids division by 0 
-    def detect_red(self,image):
-        # Detect the red pixels 
-        mask = cv2.inRange(image, (0, 0, 100), (0, 0, 255))
-        kernel = np.ones((5 ,5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
+
 
     def detect_blue(self, image):
-        mask = cv2.inRange(image, (100, 0, 0), (255, 0, 0))
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
-
-    def detect_green(self, image):
-        mask = cv2.inRange(image, (0, 100, 0), (0, 255, 0))
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
-
-    def detect_yellow(self, image):
-        mask = cv2.inRange(image, (0, 100, 100), (0, 255, 255))
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=3)
-        M = cv2.moments(mask)
-        cx = int(M['m10'] / (M['m00'] + 1e-5))
-        cy = int(M['m01'] / (M['m00'] + 1e-5))
-        return np.array([cx, cy])
-
-    def detect_orange(self, image):
-        '''
-        Returns binary mask isolating both orange objects
-        '''
-        mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.dilate(mask, kernel, iterations=1)
-        return mask
-
-    def detect_target(self, image):
-        mask = self.detect_orange(image)
+        mask = cv2.inRange(image, (100, 0, 0), (255, 1, 1))
         method = eval('cv2.TM_SQDIFF')
-        w, h = self.template.shape[::-1]
-        res = cv2.matchTemplate(mask, self.template, method)
+        w, h = self.template_blue.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_blue, method)
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         top_left = min_loc
         bottom_right = (top_left[0] + w, top_left[1] + h)
         y = top_left[0] + (w/2)
         z = top_left[1]+ (h/2)
 
-        # Position of the target must be given wrt to base frame (yellow sphere) in meters
-        yellow = self.detect_yellow(image)
-        y_yellow = yellow[0]
-        z_yellow = yellow[1]
-        delta_y = self.pixel2meter_ratio * (y - y_yellow)
-        delta_z = self.pixel2meter_ratio * (z_yellow - z)
+        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
 
-        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, 255, 2))
-        return np.array([delta_y, delta_z])
+        return np.array([y, z])
+
+    def detect_yellow(self, image):
+        mask = cv2.inRange(image, (0, 100, 100), (0, 255, 255))
+        method = eval('cv2.TM_SQDIFF')
+        w, h = self.template_yellow.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_yellow, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        top_left = min_loc
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+        y = top_left[0] + (w/2)
+        z = top_left[1]+ (h/2)
+
+        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+
+        return np.array([y, z])
+
+    def detect_green(self, image):
+        mask = cv2.inRange(image, (0, 100, 0), (1, 255, 1))
+        method = eval('cv2.TM_SQDIFF')
+        w, h = self.template_green.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_green, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        top_left = min_loc
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+        y = top_left[0] + (w/2)
+        z = top_left[1]+ (h/2)
+
+        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+
+        return np.array([y, z])
+
+    def detect_red(self, image):
+        mask = cv2.inRange(image, (0, 0, 100), (1, 1, 255))
+        method = eval('cv2.TM_SQDIFF')
+        w, h = self.template_red.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_red, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        top_left = min_loc
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+        y = top_left[0] + (w/2)
+        z = top_left[1]+ (h/2)
+
+        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+
+        return np.array([y, z])
+
+
+
+    # def detect_orange(self, image):
+    #     '''
+    #     Returns binary mask isolating both orange objects
+    #     '''
+    #     mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
+    #     kernel = np.ones((5, 5), np.uint8)
+    #     mask = cv2.dilate(mask, kernel, iterations=1)
+    #     return mask
+
+    # def detect_target(self, image):
+    #     mask = self.detect_orange(image)
+    #     method = eval('cv2.TM_SQDIFF')
+    #     w, h = self.template_orange_sphere.shape[::-1]
+    #     res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
+    #     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    #     top_left = min_loc
+    #     bottom_right = (top_left[0] + w, top_left[1] + h)
+    #     y = top_left[0] + (w/2)
+    #     z = top_left[1]+ (h/2)
+
+    #     # Position of the target must be given wrt to base frame (yellow sphere) in meters
+    #     yellow = self.detect_yellow(image)
+    #     y_yellow = yellow[0]
+    #     z_yellow = yellow[1]
+    #     delta_y = self.pixel2meter_ratio * (y - y_yellow)
+    #     delta_z = self.pixel2meter_ratio * (z_yellow - z)
+
+    #     cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, 255, 2))
+    #     return np.array([delta_y, delta_z])
 
 
     def remove_orange(self, image):
@@ -247,6 +261,9 @@ class image_converter:
 
 
     ################### TRAJECTORIES ###################
+
+    def trajectory_joint1(self, image):
+        pass
 
     def trajectory_joint2(self, image):
         current_time = rospy.get_time() - self.start_time
@@ -317,105 +334,28 @@ class image_converter:
         angle_xz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])
         angle_yz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])
         return np.array([angle_xz,angle_yz])
+
+
       
-    # What is the difference between the conditionals? They seem to do the same
     def estimate_angles_for_j23(self):
+        def estimate_angles_for_j23(self):
         temp1 = self.estimate_angles_for_j1()
-        if (self.joint4_coordinates['x'] - self.joint23_coordinates['x'] < 0):
-            angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
+        if (self.joint4_coordinates['z'] > self.joint23_coordinates['z']):
+            angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2 + np.pi
         else:
-            angle_xz = -np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) - temp1[0]
-        if (self.joint4_coordinates['y'] - self.joint23_coordinates['y'] < 0):
-            angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
-        else:
-            angle_yz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - temp1[1]
+            angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2
+        angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) + np.pi/2
         return np.array([angle_xz, angle_yz])
 
 
 
-
-    ##################### FORWARD KINEMATICS #####################
-
-    def transformation_matrix(a, alpha, d, theta):
-        '''
-        Computes transformation matrix A for frame i wrt to frame i-1 by followinf DH convention
-        '''
-        
-        # Rotation about z
-        Rz = Matrix([[cos(theta), -sin(theta), 0, 0], 
-                     [sin(theta),  cos(theta), 0, 0], 
-                     [0,           0,          1, 0], 
-                     [0,           0,          0, 1]])
-
-        # Transition along z
-        Tz = Matrix([[1, 0, 0, 0], 
-                     [0, 1, 0, 0], 
-                     [0, 0, 1, d], 
-                     [0, 0, 0, 1]])
-
-        # Transition along x
-        Tx = Matrix([[1, 0, 0, a], 
-                     [0, 1, 0, 0], 
-                     [0, 0, 1, 0], 
-                     [0, 0, 0, 1]])
-
-        # Rotation about x
-        Rx = Matrix([[1, 0,           0,          0], 
-                     [0, cos(alpha), -sin(alpha), 0], 
-                     [0, sin(alpha),  cos(alpha), 0], 
-                     [0, 0,           0,          1]])
-
-
-        A = Rz*Tz*Tx*Rx
-
-        return A
-
-
-
-
-    def forward_kinematics_end_effector(A_01, A_12, A_23, A_34):
-        '''
-        Computes Forward Kinematics given transformation matrices
-        '''
-        FK = A_01*A_12*A_23*A_34
-        return FK
-
-
-
-
-
-
-    # For 10 settings of the joint angles (theta1, theta2, theta3, theta4) use "rostopic pub" to move the robot (use os.system(command))
-    #   Compute end effector position by 
-    #       - Blob detection
-    #       - Forward Kinematics
-    #   output both results and error between them
-    theta1, theta2, theta3, theta4 = symbols('theta1 theta2 theta3 theta4')
-    A_01 = transformation_matrix(0, pi/2, 0, theta1)
-    A_12 = transformation_matrix(0, theta2, 2.5, pi/2)
-    A_23 = transformation_matrix(0, theta3, 3.5, theta3)
-    A_34 = transformation_matrix(0, theta4, 3.0, 0)
-    FK = forward_kinematics_end_effector(A_01, A_12, A_23, A_34)
-
-    displacement = FK[0:3, 3]
-    for coord, entry in zip(['x', 'y', 'z'], displacement):
-        print(coord, ': ', entry)
-
-
-
-
-    ################ TEST ################
-    # Try converting radians to degrees
-    q1 = np.rad2deg(0.3)
-    q2 = np.rad2deg(0.3)
-    q3 = np.rad2deg(1.0)
-    q4 = np.rad2deg(-1.0)
-
-    # only take the first three elements of the last row
-    test = FK.evalf(subs = {theta1:q1, theta2:q2, theta3:q3, theta4:q4})
-    ee_pos = test[0:3, 3]
-    print(np.array(ee_pos))
-
+    def estimate_angles_for_j4(self):
+        temp2 = self.estimate_angles_for_j23()
+        if (self.ee_coordinates['z'] > self.joint4_coordinates['z']):
+            angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.joint4_coordinates['y'] - self.ee_coordinates['y']) + np.pi/2
+        else:
+            angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.ee_coordinates['y'] - self.joint4_coordinates['y']) - temp2[1] + np.pi/2 - np.pi
+        return angle_yz
 
 
     ####################### CALLBACKS ##############################
@@ -425,54 +365,51 @@ class image_converter:
         # Receive the image
         try:
             self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
-            self.orange_binary_mask = self.detect_orange(self.cv_image1)
+            #self.orange_binary_mask = self.detect_orange(self.cv_image1)
         except CvBridgeError as e:
             print(e)
 
 
-        self.pixel2meter_ratio = self.pixel2meter(self.cv_image1)
+        # self.pixel2meter_ratio = self.pixel2meter(self.cv_image1)
 
         
        
 
         # joints given trajectories
-    #     self.joint1 = Float64()
-    #     self.joint1.data = self.trajectory_joint1(cv_image)
-    #     self.joint2 = Float64()
-    #     self.joint2.data = self.trajectory_joint2(self.cv_image1)
-    #     self.joint3 = Float64()
-    #     self.joint3.data = self.trajectory_joint3(self.cv_image1)
-    #     self.joint4 = Float64()
-    #     self.joint4.data = self.trajectory_joint4(self.cv_image1)
+    #   self.joint1 = Float64()
+    #   self.joint1.data = self.trajectory_joint1(cv_image)
+        self.joint2 = Float64()
+        self.joint2.data = self.trajectory_joint2(self.cv_image1)
+        self.joint3 = Float64()
+        self.joint3.data = self.trajectory_joint3(self.cv_image1)
+        self.joint4 = Float64()
+        self.joint4.data = self.trajectory_joint4(self.cv_image1)
+
+
+        
+
 
         # Get the y and z coordinates from camera 1 and update them accordingly 
 
-        #//TODO: decide which method to use for obstruction
-        # remove_orange() Vs. contour + centroids method
+
 
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
         self.estimate_and_update_j1(self.cv_image1)
         self.estimate_and_update_j23(self.cv_image1)
         self.estimate_and_update_j4(self.cv_image1)
-        self.estimate_and_update_ee(self.cv_image1)
-        self.estimate_and_update_target(self.cv_image1)
-
-
-        if self.flag_test == False:
-            for key, val in self.ee_coordinates.items():
-                # IMPORTANT -> express values wtr to base frame (yellow sphere)
-                val -= self.joint1_coordinates[key]
-                print(val * self.pixel2meter_ratio)
-            self.flag_test = True
-
-
+        # self.estimate_and_update_ee(self.cv_image1)
+        # self.estimate_and_update_target(self.cv_image1)
+        
 
         joint23_estimation = self.estimate_angles_for_j23()
+        # joint4_estimation_x = self.estimate_angles_for_j4()
         
         self.joint2_estimation = Float64()
         self.joint2_estimation.data = joint23_estimation[0]
-        self.joint3_estimation = Float64()
-        self.joint3_estimation.data = joint23_estimation[1]
+        # self.joint3_estimation = Float64()
+        # self.joint3_estimation.data = joint23_estimation[1]
+        # self.joint4_estimation = Float64()
+        # self.joint4_estimation.data = joint4_estimation_x
 
         self.target_x = Float64()
         self.target_y = Float64()
@@ -481,27 +418,46 @@ class image_converter:
         self.target_y.data = self.target_coordinates['y']
         self.target_z.data = self.target_coordinates['z']
 
+        print("Joint2 sent ", self.joint2.data)
+        print("Joint2 estimated ", self.joint2_estimation.data)
+        print("Joint3 sent ", self.joint3.data)
+        print("Joint3 estimated ", self.joint3_estimation.data)
+        print("Joint4 sent ", self.joint4.data)
+        print("Joint4 estimated ", self.joint4_estimation.data)
+        print(" ")
 
-    
+
+
+        
+        ######################### SHOW IMAGES #########################
 
         im1 = cv2.imshow('window1', self.cv_image1)
-        orange_binary_image = cv2.imshow('orange mask', self.orange_binary_mask)
+        #orange_binary_image = cv2.imshow('orange mask', self.orange_binary_mask)
         #im1_no_orange = cv2.imshow('no_orange camera1', self.cv_image1_no_orange)
+
+        self.detect_yellow(self.cv_image1)
+        self.detect_blue(self.cv_image1)
+        self.detect_green(self.cv_image1)
+        self.detect_red(self.cv_image1)
         cv2.waitKey(1)
+
+
+
+
         # Publish the results
         try:
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             # Move joints by following given trajectories
             #self.robot_joint1_pub.publish(self.joint1)
-            # self.robot_joint2_pub.publish(self.joint2)
-            # self.robot_joint3_pub.publish(self.joint3)
-            # self.robot_joint4_pub.publish(self.joint4)
+            self.robot_joint2_pub.publish(self.joint2)
+            self.robot_joint3_pub.publish(self.joint3)
+            self.robot_joint4_pub.publish(self.joint4)
 
             # Publish joint estimation w/ computer vision 
-            #self.joint1_estimation_pub.publish(self.joint1_estimation)
+            # self.joint1_estimation_pub.publish(self.joint1_estimation)
             self.joint2_estimation_pub.publish(self.joint2_estimation)
-            self.joint3_estimation_pub.publish(self.joint3_estimation)
-            #self.joint4_estimation_pub.publish(self.joint4_estimation)
+            # self.joint3_estimation_pub.publish(self.joint3_estimation)
+            # self.joint4_estimation_pub.publish(self.joint4_estimation)
             self.target_x_pub.publish(self.target_x)
             self.target_y_pub.publish(self.target_y)
             self.target_z_pub.publish(self.target_z)
