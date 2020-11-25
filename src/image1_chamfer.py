@@ -436,9 +436,9 @@ class image_converter:
 
 
     def control_closed(self, angles, FK):
-        K_p = np.array([[5,0,0],[0,5,0],[0,0,5]])
-        K_d = np.array([[0.0,0,0],[0,0.0,0],[0,0,0.0]]) 
-        K_i = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]])
+        K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
+        K_d = np.array([[0.05,0,0],[0,0.05,0],[0,0,0.05]]) 
+        K_i = np.array([[0.15,0,0],[0,0.15,0],[0,0,0.15]])
 
         c_time = np.array([rospy.get_time()])
         dt = c_time - self.time_previous_step
@@ -451,8 +451,7 @@ class image_converter:
                           self.actual_target_position['y'], 
                           self.actual_target_position['z']])
 
-        print(pos)
-        print(pos_d)
+        print("Error: ", abs(pos_d-pos))
         print(" ")
 
         self.error_d = ((pos_d - pos) - self.error) / dt
