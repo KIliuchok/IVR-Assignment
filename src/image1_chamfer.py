@@ -93,10 +93,20 @@ class image_converter:
         self.actual_target_position_y_sub = rospy.Subscriber('/target/y_position_controller/command', Float64, self.update_target_actual_y, queue_size=10)
         self.actual_target_position_z_sub = rospy.Subscriber('/target/z_position_controller/command', Float64, self.update_target_actual_z, queue_size=10)
 
+        # box position for null-space control
+        self.box_position = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.box_position_x_sub = rospy.Subscriber('/target2/x2_position_controller/command', Float64, self.update_box_position_x, queue_size=10)
+        self.box_position_y_sub = rospy.Subscriber('/target2/y2_position_controller/command', Float64, self.update_box_position_y, queue_size=10)
+        self.box_position_z_sub = rospy.Subscriber('/target2/z2_position_controller/command', Float64, self.update_box_position_z, queue_size=10)
+
 
         # Initialize error and derivative of the error
         self.error = np.array([0.0, 0.0, 0.0], dtype='float64')
         self.error_d = np.array([0.0, 0.0, 0.0], dtype='float64')
+
+        # Error and derivate of the error for secondary task
+        self.error_secondary = np.array([0.0, 0.0, 0.0, 0.0], dtype='float64')
+        self.error_d_secondary = np.array([0.0, 0.0, 0.0, 0.0], dtype='float64')
 
 
     def update_target_actual_x(self, data):
@@ -107,6 +117,15 @@ class image_converter:
 
     def update_target_actual_z(self, data):
         self.actual_target_position['z'] = data.data
+
+    def update_box_position_x(self, data):
+        self.box_position['x'] = data.data
+
+    def update_box_position_y(self, data):
+        self.box_position['y'] = data.data
+
+    def update_box_position_z(self, data):
+        self.box_position['z'] = data.data
 
 
     def update_actual_joint_states(self, data):
@@ -435,10 +454,10 @@ class image_converter:
         return jac
 
 
-    def control_closed(self, angles, FK):
+    def control_closed(self, angles, FK, target='sphere'):
         K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
         K_d = np.array([[0.05,0,0],[0,0.05,0],[0,0,0.05]]) 
-        K_i = np.array([[0.15,0,0],[0,0.15,0],[0,0,0.15]])
+        K_i = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]])
 
         c_time = np.array([rospy.get_time()])
         dt = c_time - self.time_previous_step
@@ -447,12 +466,19 @@ class image_converter:
         pos = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
                         (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
                         (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
-        pos_d = np.array([self.actual_target_position['x'], 
-                          self.actual_target_position['y'], 
-                          self.actual_target_position['z']])
 
-        print("Error: ", abs(pos_d-pos))
-        print(" ")
+        # Depending on whether we want to follow the sphere or the box
+        if target == 'sphere':
+            pos_d = np.array([self.actual_target_position['x'], 
+                              self.actual_target_position['y'], 
+                              self.actual_target_position['z']])
+        elif target == 'box':
+            pos_d = np.array([self.box_position['x'], 
+                              self.box_position['y'], 
+                              self.box_position['z']])
+
+        # print("Error: ", abs(pos_d-pos))
+        # print(" ")
 
         self.error_d = ((pos_d - pos) - self.error) / dt
         self.error = pos_d - pos
@@ -462,6 +488,46 @@ class image_converter:
         d_qd = np.dot(jac_inv, (np.dot(K_d, self.error_d.transpose()) + np.dot(K_p, self.error.transpose()) + np.dot(K_i, (self.error * dt).transpose())))
         q_d = q + (d_qd * dt)
         return q_d
+
+
+    def control_null_space(self, angles, FK):
+        K_p = np.array([[3,0,0],[0,3,0],[0,0,3]])
+        K_d = np.array([[0.01,0,0],[0,0.01,0],[0,0,0.01]]) 
+        K_i = np.array([[0.12,0,0],[0,0.2,0],[0,0,0.2]])
+
+        # Configuration we want to stay away from
+        pos_not_d = self.control_closed(angles, FK, target='box')
+
+        c_time = np.array([rospy.get_time()])
+        dt = c_time - self.time_previous_step
+        self.time_previous_step = c_time
+
+        pos = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
+                         (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
+                         (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
+        pos_d = np.array([self.actual_target_position['x'], 
+                           self.actual_target_position['y'], 
+                           self.actual_target_position['z']])
+
+        
+
+        self.error_d = ((pos_d - pos) - self.error) / dt
+        self.error = pos_d - pos
+
+        self.error_d_secondary = (pos_not_d - angles) / dt
+        self.error_secondary = pos_not_d - angles
+
+        q = angles
+        jac = np.asarray(self.estimate_jacobian(FK, angles[0], angles[1], angles[2], angles[3])).astype(np.float64)
+        jac_inv = np.linalg.pinv(jac)
+        d_qd = np.dot(jac_inv, (np.dot(K_d, self.error_d.transpose()) + 
+                                np.dot(K_p, self.error.transpose()) + 
+                                np.dot(K_i, (self.error * dt).transpose())))
+        proj_null_space = np.eye(jac_inv.shape[0]) - np.dot(jac_inv, jac)
+        d_qd -= np.dot(proj_null_space, self.error_d_secondary)
+        q_d = q + (d_qd * dt)
+        return q_d
+
 
 
 
@@ -532,7 +598,7 @@ class image_converter:
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
         self.estimate_and_update_j1(self.cv_image1)
         # self.estimate_and_update_j23(self.cv_image1)
-        # self.estimate_and_update_j4(self.cv_image1)
+        self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
         # self.estimate_and_update_target(self.cv_image1)
         
@@ -594,9 +660,11 @@ class image_converter:
 
 
         ##################### CLOSED-LOOP CONTROL #####################
+        #####################  NULL-SPACE CONTROL  #####################
 
         angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
-        q_d = self.control_closed(angles, FK)
+        # q_d = self.control_closed(angles, FK)
+        q_d = self.control_null_space(angles, FK)
 
 
         self.joint1 = Float64()
