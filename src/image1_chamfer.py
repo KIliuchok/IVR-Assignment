@@ -8,7 +8,7 @@ import numpy as np
 import os
 from sympy import *
 from std_msgs.msg import String
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
 
@@ -49,6 +49,7 @@ class image_converter:
         self.target_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
 
 
+
         self.pixel2meter_ratio = 0
 
 
@@ -81,6 +82,38 @@ class image_converter:
         # Time steps
         self.time_previous_step = np.array([rospy.get_time()], dtype='float64')
 
+
+        # actual angles for closed-loop control
+        self.actual_joint_states = {'q1' : 0, 'q2' : 0, 'q3' : 0, 'q4' : 0}
+        self.actual_joint_states_sub = rospy.Subscriber('/robot/joint_states', JointState, self.update_actual_joint_states, queue_size=10)
+
+        # actual target position for closed-loop control
+        self.actual_target_position = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.actual_target_position_x_sub = rospy.Subscriber('/target/x_position_controller/command', Float64, self.update_target_actual_x, queue_size=10)
+        self.actual_target_position_y_sub = rospy.Subscriber('/target/y_position_controller/command', Float64, self.update_target_actual_y, queue_size=10)
+        self.actual_target_position_z_sub = rospy.Subscriber('/target/z_position_controller/command', Float64, self.update_target_actual_z, queue_size=10)
+
+
+        # Initialize error and derivative of the error
+        self.error = np.array([0.0, 0.0, 0.0], dtype='float64')
+        self.error_d = np.array([0.0, 0.0, 0.0], dtype='float64')
+
+
+    def update_target_actual_x(self, data):
+        self.actual_target_position['x'] = data.data
+
+    def update_target_actual_y(self, data):
+        self.actual_target_position['y'] = data.data
+
+    def update_target_actual_z(self, data):
+        self.actual_target_position['z'] = data.data
+
+
+    def update_actual_joint_states(self, data):
+        self.actual_joint_states['q1'] = data.position[0]
+        self.actual_joint_states['q2'] = data.position[1]
+        self.actual_joint_states['q3'] = data.position[2]
+        self.actual_joint_states['q4'] = data.position[3]
 
 
     def update_j1_x(self,data):
@@ -402,9 +435,10 @@ class image_converter:
         return jac
 
 
-    def control_closed(self, angles):
-        K_p = np.array([[10,0,0],[0,10,0],[0,0,10]])
-        K_d = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]]) 
+    def control_closed(self, angles, FK):
+        K_p = np.array([[5,0,0],[0,5,0],[0,0,5]])
+        K_d = np.array([[0.0,0,0],[0,0.0,0],[0,0,0.0]]) 
+        K_i = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]])
 
         c_time = np.array([rospy.get_time()])
         dt = c_time - self.time_previous_step
@@ -413,15 +447,23 @@ class image_converter:
         pos = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
                         (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
                         (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
-        pos_d = np.array([(self.target_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
-                        (self.target_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
-                        (self.joint1_coordinates['z'] - self.target_coordinates['z']) * self.pixel2meter_ratio])
+        pos_d = np.array([self.actual_target_position['x'], 
+                          self.actual_target_position['y'], 
+                          self.actual_target_position['z']])
+
+        print(pos)
+        print(pos_d)
+        print(" ")
 
         self.error_d = ((pos_d - pos) - self.error) / dt
         self.error = pos_d - pos
+        q = angles
+        jac = np.asarray(self.estimate_jacobian(FK, angles[0], angles[1], angles[2], angles[3])).astype(np.float64)
+        jac_inv = np.linalg.pinv(jac)
+        d_qd = np.dot(jac_inv, (np.dot(K_d, self.error_d.transpose()) + np.dot(K_p, self.error.transpose()) + np.dot(K_i, (self.error * dt).transpose())))
+        q_d = q + (d_qd * dt)
+        return q_d
 
-
-        ########## currently here 
 
 
 
@@ -490,19 +532,19 @@ class image_converter:
 
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
         self.estimate_and_update_j1(self.cv_image1)
-        self.estimate_and_update_j23(self.cv_image1)
-        self.estimate_and_update_j4(self.cv_image1)
+        # self.estimate_and_update_j23(self.cv_image1)
+        # self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
-        #self.estimate_and_update_target(self.cv_image1)
+        # self.estimate_and_update_target(self.cv_image1)
         
 
-        joint23_estimation = self.estimate_angles_for_j23()
+        # joint23_estimation = self.estimate_angles_for_j23()
         # joint4_estimation_x = self.estimate_angles_for_j4()
         
-        self.joint2_estimation = Float64()
-        self.joint2_estimation.data = joint23_estimation[0]
-        self.joint3_estimation = Float64()
-        self.joint3_estimation.data = joint23_estimation[1]
+        # self.joint2_estimation = Float64()
+        # self.joint2_estimation.data = joint23_estimation[0]
+        # self.joint3_estimation = Float64()
+        # self.joint3_estimation.data = joint23_estimation[1]
         # self.joint4_estimation = Float64()
         # self.joint4_estimation.data = joint4_estimation_x
 
@@ -535,10 +577,10 @@ class image_converter:
         A_34 = self.transformation_matrix(3, 0, 0, theta4)
         FK   = self.forward_kinematics_end_effector(A_01, A_12, A_23, A_34)
 
-        q1 = 0.5
-        q2 = -0.6
-        q3 = 0.3
-        q4 = -0.3
+        # q1 = 0.5
+        # q2 = -0.6
+        # q3 = 0.3
+        # q4 = -0.3
 
         # test = FK.evalf(subs = {theta1:q1, theta2:q2, theta3:q3, theta4:q4})
         # ee_pos_FK = np.array(test[0:3, 3])
@@ -553,7 +595,19 @@ class image_converter:
 
 
         ##################### CLOSED-LOOP CONTROL #####################
-        jac = self.estimate_jacobian(FK, q1, q2, q3, q4)
+
+        angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
+        q_d = self.control_closed(angles, FK)
+
+
+        self.joint1 = Float64()
+        self.joint1.data = q_d[0]
+        self.joint2 = Float64()
+        self.joint2.data = q_d[1]
+        self.joint3 = Float64()
+        self.joint3.data = q_d[2]
+        self.joint4 = Float64()
+        self.joint4.data = q_d[3]
 
 
 
@@ -569,11 +623,11 @@ class image_converter:
         # Publish the results
         try:
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
-            # Move joints by following given trajectories
-            #self.robot_joint1_pub.publish(self.joint1)
-            # self.robot_joint2_pub.publish(self.joint2)
-            # self.robot_joint3_pub.publish(self.joint3)
-            # self.robot_joint4_pub.publish(self.joint4)
+            # Move joints by following given trajectories / closed-loop control
+            self.robot_joint1_pub.publish(self.joint1)
+            self.robot_joint2_pub.publish(self.joint2)
+            self.robot_joint3_pub.publish(self.joint3)
+            self.robot_joint4_pub.publish(self.joint4)
 
             # Publish joint estimation w/ computer vision 
             # self.joint1_estimation_pub.publish(self.joint1_estimation)
