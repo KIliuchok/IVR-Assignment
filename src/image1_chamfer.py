@@ -6,6 +6,7 @@ import rospy
 import cv2
 import numpy as np
 import os
+from sympy import *
 from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float64MultiArray, Float64
@@ -77,9 +78,9 @@ class image_converter:
 
         self.rate = rospy.Rate(20)
 
+        # Time steps
+        self.time_previous_step = np.array([rospy.get_time()], dtype='float64')
 
-        # TEST
-        self.orange_area = 0
 
 
     def update_j1_x(self,data):
@@ -345,6 +346,85 @@ class image_converter:
         else:
             self.target_coordinates['z'] = target[1]
 
+
+
+    def transformation_matrix(self, a, alpha, d, theta):
+        '''
+        Computes transformation matrix A for frame i wrt to frame i-1 by followinf DH convention
+        '''
+        
+        # Rotation about z
+        Rz = Matrix([[cos(theta), -sin(theta), 0, 0], 
+                     [sin(theta),  cos(theta), 0, 0], 
+                     [0,           0,          1, 0], 
+                     [0,           0,          0, 1]])
+
+        # Transition along z
+        Tz = Matrix([[1, 0, 0, 0], 
+                     [0, 1, 0, 0], 
+                     [0, 0, 1, d], 
+                     [0, 0, 0, 1]])
+
+        # Transition along x
+        Tx = Matrix([[1, 0, 0, a], 
+                     [0, 1, 0, 0], 
+                     [0, 0, 1, 0], 
+                     [0, 0, 0, 1]])
+
+        # Rotation about x
+        Rx = Matrix([[1, 0,           0,          0], 
+                     [0, cos(alpha), -sin(alpha), 0], 
+                     [0, sin(alpha),  cos(alpha), 0], 
+                     [0, 0,           0,          1]])
+
+
+        A = Rz*Tz*Tx*Rx
+
+        return A
+
+
+
+
+    def forward_kinematics_end_effector(self, A_01, A_12, A_23, A_34):
+        '''
+        Computes Forward Kinematics given transformation matrices
+        '''
+        FK = A_01*A_12*A_23*A_34
+        return FK
+
+
+
+    def estimate_jacobian(self, FK, q1, q2, q3, q4):
+        theta1, theta2, theta3, theta4 = symbols('theta1 theta2 theta3 theta4')
+        end_effector_FK = FK[0:3, 3]
+        jacobian = end_effector_FK.jacobian([theta1, theta2, theta3, theta4])
+        jac = jacobian.evalf(subs = {theta1:q1, theta2:q2, theta3:q3, theta4:q4})
+        return jac
+
+
+    def control_closed(self, angles):
+        K_p = np.array([[10,0,0],[0,10,0],[0,0,10]])
+        K_d = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]]) 
+
+        c_time = np.array([rospy.get_time()])
+        dt = c_time - self.time_previous_step
+        self.time_previous_step = c_time
+
+        pos = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
+                        (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
+                        (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
+        pos_d = np.array([(self.target_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
+                        (self.target_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
+                        (self.joint1_coordinates['z'] - self.target_coordinates['z']) * self.pixel2meter_ratio])
+
+        self.error_d = ((pos_d - pos) - self.error) / dt
+        self.error = pos_d - pos
+
+
+        ########## currently here 
+
+
+
     ########### Estimate angles between points ############
     def estimate_angles_for_j1(self):
         angle_xz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])
@@ -354,12 +434,12 @@ class image_converter:
 
       
     def estimate_angles_for_j23(self):
-        temp1 = self.estimate_angles_for_j1()
-        if (self.joint4_coordinates['z'] > self.joint23_coordinates['z']):
-            angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2 + np.pi
-        else:
-            angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2
-        angle_xz = np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['x'] - self.joint23_coordinates['x']) + np.pi/2
+        delta_vertical = self.joint23_coordinates['z'] - self.joint4_coordinates['z']
+        delta_horizontal = self.joint4_coordinates['y'] - self.joint23_coordinates['y']
+        angle_xz = np.arctan2(delta_vertical, delta_horizontal) - np.pi/2
+
+        delta_horizontal = self.joint4_coordinates['x'] - self.joint23_coordinates['x']
+        angle_yz = np.arctan2(delta_vertical, delta_horizontal) - np.pi/2
         return np.array([angle_xz, angle_yz])
 
 
@@ -394,15 +474,14 @@ class image_converter:
         # joints given trajectories
     #   self.joint1 = Float64()
     #   self.joint1.data = self.trajectory_joint1(cv_image)
-        self.joint2 = Float64()
-        self.joint2.data = self.trajectory_joint2(self.cv_image1)
-        self.joint3 = Float64()
-        self.joint3.data = self.trajectory_joint3(self.cv_image1)
-        self.joint4 = Float64()
-        self.joint4.data = self.trajectory_joint4(self.cv_image1)
+        # self.joint2 = Float64()
+        # self.joint2.data = self.trajectory_joint2(self.cv_image1)
+        # self.joint3 = Float64()
+        # self.joint3.data = self.trajectory_joint3(self.cv_image1)
+        # self.joint4 = Float64()
+        # self.joint4.data = self.trajectory_joint4(self.cv_image1)
 
 
-        
 
 
         # Get the y and z coordinates from camera 1 and update them accordingly 
@@ -410,29 +489,29 @@ class image_converter:
 
 
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
-        #self.estimate_and_update_j1(self.cv_image1)
-        #self.estimate_and_update_j23(self.cv_image1)
-        #self.estimate_and_update_j4(self.cv_image1)
-        #self.estimate_and_update_ee(self.cv_image1)
-        self.estimate_and_update_target(self.cv_image1)
+        self.estimate_and_update_j1(self.cv_image1)
+        self.estimate_and_update_j23(self.cv_image1)
+        self.estimate_and_update_j4(self.cv_image1)
+        self.estimate_and_update_ee(self.cv_image1)
+        #self.estimate_and_update_target(self.cv_image1)
         
 
-        # joint23_estimation = self.estimate_angles_for_j23()
+        joint23_estimation = self.estimate_angles_for_j23()
         # joint4_estimation_x = self.estimate_angles_for_j4()
         
-        # self.joint2_estimation = Float64()
-        # self.joint2_estimation.data = joint23_estimation[0]
-        # self.joint3_estimation = Float64()
-        # self.joint3_estimation.data = joint23_estimation[1]
+        self.joint2_estimation = Float64()
+        self.joint2_estimation.data = joint23_estimation[0]
+        self.joint3_estimation = Float64()
+        self.joint3_estimation.data = joint23_estimation[1]
         # self.joint4_estimation = Float64()
         # self.joint4_estimation.data = joint4_estimation_x
 
-        self.target_x = Float64()
-        self.target_y = Float64()
-        self.target_z = Float64()
-        self.target_x.data = self.target_coordinates['x']
-        self.target_y.data = self.target_coordinates['y']
-        self.target_z.data = self.target_coordinates['z']
+        # self.target_x = Float64()
+        # self.target_y = Float64()
+        # self.target_z = Float64()
+        # self.target_x.data = self.target_coordinates['x']
+        # self.target_y.data = self.target_coordinates['y']
+        # self.target_z.data = self.target_coordinates['z']
 
         # print("Joint2 sent ", self.joint2.data)
         # print("Joint2 estimated ", self.joint2_estimation.data)
@@ -441,6 +520,41 @@ class image_converter:
         # print("Joint4 sent ", self.joint4.data)
         # print("Joint4 estimated ", self.joint4_estimation.data)
         # print(" ")
+
+        ##################### FORWARD KINEMATICS #####################
+
+    # For 10 settings of the joint angles (theta1, theta2, theta3, theta4) use "rostopic pub" to move the robot (use os.system(command))
+    #   Compute end effector position by 
+    #       - Computer vision
+    #       - Forward Kinematics
+    #   output both results and error between them
+        theta1, theta2, theta3, theta4 = symbols('theta1 theta2 theta3 theta4')
+        A_01 = self.transformation_matrix(0, pi/2, 2.5, (pi/2 + theta1))
+        A_12 = self.transformation_matrix(0, pi/2, 0, (pi/2 + theta2))
+        A_23 = self.transformation_matrix(3.5, -pi/2, 0, theta3)
+        A_34 = self.transformation_matrix(3, 0, 0, theta4)
+        FK   = self.forward_kinematics_end_effector(A_01, A_12, A_23, A_34)
+
+        q1 = 0.5
+        q2 = -0.6
+        q3 = 0.3
+        q4 = -0.3
+
+        # test = FK.evalf(subs = {theta1:q1, theta2:q2, theta3:q3, theta4:q4})
+        # ee_pos_FK = np.array(test[0:3, 3])
+
+        # ee_pos_vision = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
+        #                           (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
+        #                           (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
+        # #print("Error: ", ee_pos_FK - ee_pos_vision)
+        # print(ee_pos_FK)
+        # print(ee_pos_vision)
+        
+
+
+        ##################### CLOSED-LOOP CONTROL #####################
+        jac = self.estimate_jacobian(FK, q1, q2, q3, q4)
+
 
 
 
@@ -457,18 +571,18 @@ class image_converter:
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             # Move joints by following given trajectories
             #self.robot_joint1_pub.publish(self.joint1)
-            self.robot_joint2_pub.publish(self.joint2)
-            self.robot_joint3_pub.publish(self.joint3)
-            self.robot_joint4_pub.publish(self.joint4)
+            # self.robot_joint2_pub.publish(self.joint2)
+            # self.robot_joint3_pub.publish(self.joint3)
+            # self.robot_joint4_pub.publish(self.joint4)
 
             # Publish joint estimation w/ computer vision 
             # self.joint1_estimation_pub.publish(self.joint1_estimation)
             # self.joint2_estimation_pub.publish(self.joint2_estimation)
             # self.joint3_estimation_pub.publish(self.joint3_estimation)
             # self.joint4_estimation_pub.publish(self.joint4_estimation)
-            self.target_x_pub.publish(self.target_x)
-            self.target_y_pub.publish(self.target_y)
-            self.target_z_pub.publish(self.target_z)
+            # self.target_x_pub.publish(self.target_x)
+            # self.target_y_pub.publish(self.target_y)
+            # self.target_z_pub.publish(self.target_z)
 
 
         except CvBridgeError as e:
