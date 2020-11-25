@@ -78,6 +78,9 @@ class image_converter:
         self.rate = rospy.Rate(20)
 
 
+        # TEST
+        self.orange_area = 0
+
 
     def update_j1_x(self,data):
         self.joint1_coordinates['x'] = data.data
@@ -122,7 +125,7 @@ class image_converter:
         y = top_left[0] + (w/2)
         z = top_left[1]+ (h/2)
 
-        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        # cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
 
         return np.array([y, z])
 
@@ -137,7 +140,7 @@ class image_converter:
         y = top_left[0] + (w/2)
         z = top_left[1]+ (h/2)
 
-        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        # cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
 
         return np.array([y, z])
 
@@ -152,7 +155,7 @@ class image_converter:
         y = top_left[0] + (w/2)
         z = top_left[1]+ (h/2)
 
-        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        # cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
 
         return np.array([y, z])
 
@@ -167,41 +170,54 @@ class image_converter:
         y = top_left[0] + (w/2)
         z = top_left[1]+ (h/2)
 
-        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        # cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
 
         return np.array([y, z])
 
 
 
-    # def detect_orange(self, image):
-    #     '''
-    #     Returns binary mask isolating both orange objects
-    #     '''
-    #     mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
-    #     kernel = np.ones((5, 5), np.uint8)
-    #     mask = cv2.dilate(mask, kernel, iterations=1)
-    #     return mask
 
-    # def detect_target(self, image):
-    #     mask = self.detect_orange(image)
-    #     method = eval('cv2.TM_SQDIFF')
-    #     w, h = self.template_orange_sphere.shape[::-1]
-    #     res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
-    #     min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-    #     top_left = min_loc
-    #     bottom_right = (top_left[0] + w, top_left[1] + h)
-    #     y = top_left[0] + (w/2)
-    #     z = top_left[1]+ (h/2)
 
-    #     # Position of the target must be given wrt to base frame (yellow sphere) in meters
-    #     yellow = self.detect_yellow(image)
-    #     y_yellow = yellow[0]
-    #     z_yellow = yellow[1]
-    #     delta_y = self.pixel2meter_ratio * (y - y_yellow)
-    #     delta_z = self.pixel2meter_ratio * (z_yellow - z)
+    def detect_target(self, image):
+        mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
 
-    #     cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, 255, 2))
-    #     return np.array([delta_y, delta_z])
+        # remove box by finding its contour first and filling it with grey
+        edges = cv2.Canny(mask, 30, 200)
+        contours, hierarchy = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
+
+        #Contour approximation to distinguish between sphere and box
+        c = None
+        for contour in contours:
+            length = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, length*0.04, True)
+            if len(approx) == 4:
+                c = contour
+
+        image = cv2.drawContours(image, [c], -1, (179, 179, 179), thickness=cv2.FILLED) 
+
+        mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
+
+
+        # Chamfer matching
+        method = eval('cv2.TM_SQDIFF')
+        w, h = self.template_orange_sphere.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+        top_left = min_loc
+        bottom_right = (top_left[0] + w, top_left[1] + h)
+        y = top_left[0] + (w/2)
+        z = top_left[1]+ (h/2)
+
+        # Position of the target must be given wrt to base frame (yellow sphere) in meters
+        yellow = self.detect_yellow(image)
+        y_yellow = yellow[0]
+        z_yellow = yellow[1]
+        delta_y = self.pixel2meter_ratio * (y - y_yellow)
+        delta_z = self.pixel2meter_ratio * (z_yellow - z)
+
+        cv2.imshow('test', mask)
+        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        return np.array([delta_y, delta_z])
 
 
     def remove_orange(self, image):
@@ -338,7 +354,6 @@ class image_converter:
 
       
     def estimate_angles_for_j23(self):
-        def estimate_angles_for_j23(self):
         temp1 = self.estimate_angles_for_j1()
         if (self.joint4_coordinates['z'] > self.joint23_coordinates['z']):
             angle_yz = (-1) * np.arctan2(self.joint4_coordinates['z'] - self.joint23_coordinates['z'], self.joint4_coordinates['y'] - self.joint23_coordinates['y']) - np.pi/2 + np.pi
@@ -370,7 +385,8 @@ class image_converter:
             print(e)
 
 
-        # self.pixel2meter_ratio = self.pixel2meter(self.cv_image1)
+        if self.pixel2meter_ratio == 0:
+            self.pixel2meter_ratio = self.pixel2meter(self.cv_image1)
 
         
        
@@ -394,18 +410,18 @@ class image_converter:
 
 
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
-        self.estimate_and_update_j1(self.cv_image1)
-        self.estimate_and_update_j23(self.cv_image1)
-        self.estimate_and_update_j4(self.cv_image1)
-        # self.estimate_and_update_ee(self.cv_image1)
-        # self.estimate_and_update_target(self.cv_image1)
+        #self.estimate_and_update_j1(self.cv_image1)
+        #self.estimate_and_update_j23(self.cv_image1)
+        #self.estimate_and_update_j4(self.cv_image1)
+        #self.estimate_and_update_ee(self.cv_image1)
+        self.estimate_and_update_target(self.cv_image1)
         
 
-        joint23_estimation = self.estimate_angles_for_j23()
+        # joint23_estimation = self.estimate_angles_for_j23()
         # joint4_estimation_x = self.estimate_angles_for_j4()
         
-        self.joint2_estimation = Float64()
-        self.joint2_estimation.data = joint23_estimation[0]
+        # self.joint2_estimation = Float64()
+        # self.joint2_estimation.data = joint23_estimation[0]
         # self.joint3_estimation = Float64()
         # self.joint3_estimation.data = joint23_estimation[1]
         # self.joint4_estimation = Float64()
@@ -418,13 +434,13 @@ class image_converter:
         self.target_y.data = self.target_coordinates['y']
         self.target_z.data = self.target_coordinates['z']
 
-        print("Joint2 sent ", self.joint2.data)
-        print("Joint2 estimated ", self.joint2_estimation.data)
-        print("Joint3 sent ", self.joint3.data)
-        print("Joint3 estimated ", self.joint3_estimation.data)
-        print("Joint4 sent ", self.joint4.data)
-        print("Joint4 estimated ", self.joint4_estimation.data)
-        print(" ")
+        # print("Joint2 sent ", self.joint2.data)
+        # print("Joint2 estimated ", self.joint2_estimation.data)
+        # print("Joint3 sent ", self.joint3.data)
+        # print("Joint3 estimated ", self.joint3_estimation.data)
+        # print("Joint4 sent ", self.joint4.data)
+        # print("Joint4 estimated ", self.joint4_estimation.data)
+        # print(" ")
 
 
 
@@ -432,16 +448,8 @@ class image_converter:
         ######################### SHOW IMAGES #########################
 
         im1 = cv2.imshow('window1', self.cv_image1)
-        #orange_binary_image = cv2.imshow('orange mask', self.orange_binary_mask)
         #im1_no_orange = cv2.imshow('no_orange camera1', self.cv_image1_no_orange)
-
-        self.detect_yellow(self.cv_image1)
-        self.detect_blue(self.cv_image1)
-        self.detect_green(self.cv_image1)
-        self.detect_red(self.cv_image1)
         cv2.waitKey(1)
-
-
 
 
         # Publish the results
@@ -455,7 +463,7 @@ class image_converter:
 
             # Publish joint estimation w/ computer vision 
             # self.joint1_estimation_pub.publish(self.joint1_estimation)
-            self.joint2_estimation_pub.publish(self.joint2_estimation)
+            # self.joint2_estimation_pub.publish(self.joint2_estimation)
             # self.joint3_estimation_pub.publish(self.joint3_estimation)
             # self.joint4_estimation_pub.publish(self.joint4_estimation)
             self.target_x_pub.publish(self.target_x)
