@@ -532,6 +532,7 @@ class image_converter:
 
 
 
+
     ########### Estimate angles between points ############
     def estimate_angles_for_j1(self):
         angle_xz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])
