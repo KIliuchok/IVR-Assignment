@@ -80,6 +80,11 @@ class image_converter:
         self.target_z_pub = rospy.Publisher("/target_estimation/z", Float64, queue_size=10)
         self.target_x_pub = rospy.Publisher("/target_estimation/x", Float64, queue_size=10)
 
+        # End effector position publishers
+        self.ee_y_pub = rospy.Publisher('ee/estimated_y', Float64, queue_size=10)
+        self.ee_x_pub = rospy.Publisher('ee/estimated_x', Float64, queue_size=10)
+        self.ee_z_pub = rospy.Publisher('ee/estimated_z', Float64, queue_size=10)
+
         self.rate = rospy.Rate(20)
 
         # Time steps
@@ -407,9 +412,9 @@ class image_converter:
 
     def estimate_and_update_ee(self,image):
         red = self.detect_red(image)
-        self.ee_coordinates['y'] = red[0]
+        self.ee_coordinates['y'] = red[0] 
         if not (self.ee_coordinates['z'] == 0):
-            temp = self.ee_coordinates['z'] + red[1]
+            temp = self.ee_coordinates['z'] + red[1] 
             self.ee_coordinates['z'] = temp/2
         else:
             self.ee_coordinates['z'] = red[1]
@@ -489,7 +494,7 @@ class image_converter:
 
     def control_closed(self, angles, FK, target='sphere'):
         K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
-        K_d = np.array([[0.01,0,0],[0,0.01,0],[0,0,0.01]]) 
+        K_d = np.array([[0.05,0,0],[0,0.05,0],[0,0,0.05]]) 
         K_i = np.array([[0.15,0,0],[0,0.15,0],[0,0,0.15]])
 
         c_time = np.array([rospy.get_time()])
@@ -500,7 +505,7 @@ class image_converter:
                         (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
                         (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
 
-        # Depending on whether we want to follow thebox sphere or the box
+        # Depending on whether we want to follow the sphere or the box
         if target == 'sphere':
             pos_d = np.array([self.target_coordinates['x'], 
                               self.target_coordinates['y'], 
@@ -632,10 +637,10 @@ class image_converter:
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
         self.estimate_and_update_j1(self.cv_image1)
         # self.estimate_and_update_j23(self.cv_image1)
-        self.estimate_and_update_j4(self.cv_image1)
+        # self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
         self.estimate_and_update_target(self.cv_image1)
-        self.estimate_and_update_box(self.cv_image1)
+        # self.estimate_and_update_box(self.cv_image1)
         
 
         # joint23_estimation = self.estimate_angles_for_j23()
@@ -648,12 +653,19 @@ class image_converter:
         # self.joint4_estimation = Float64()
         # self.joint4_estimation.data = joint4_estimation_x
 
-        # self.target_x = Float64()
-        # self.target_y = Float64()
-        # self.target_z = Float64()
-        # self.target_x.data = self.target_coordinates['x']
-        # self.target_y.data = self.target_coordinates['y']
-        # self.target_z.data = self.target_coordinates['z']
+        self.target_x = Float64()
+        self.target_y = Float64()
+        self.target_z = Float64()
+        self.target_x.data = self.target_coordinates['x']
+        self.target_y.data = self.target_coordinates['y']
+        self.target_z.data = self.target_coordinates['z']
+
+        self.ee_x = Float64()
+        self.ee_y = Float64()
+        self.ee_z = Float64()
+        self.ee_x.data = (self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio
+        self.ee_y.data = (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio
+        self.ee_z.data = (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio
 
         # print("Joint2 sent ", self.joint2.data)
         # print("Joint2 estimated ", self.joint2_estimation.data)
@@ -699,8 +711,8 @@ class image_converter:
 
         angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
         
-        # q_d = self.control_closed(angles, FK)
-        q_d = self.control_null_space(angles, FK)
+        q_d = self.control_closed(angles, FK)
+        # q_d = self.control_null_space(angles, FK)
 
 
         self.joint1 = Float64()
@@ -737,9 +749,13 @@ class image_converter:
             # self.joint2_estimation_pub.publish(self.joint2_estimation)
             # self.joint3_estimation_pub.publish(self.joint3_estimation)
             # self.joint4_estimation_pub.publish(self.joint4_estimation)
-            # self.target_x_pub.publish(self.target_x)
-            # self.target_y_pub.publish(self.target_y)
-            # self.target_z_pub.publish(self.target_z)
+            self.target_x_pub.publish(self.target_x)
+            self.target_y_pub.publish(self.target_y)
+            self.target_z_pub.publish(self.target_z)
+
+            self.ee_x_pub.publish(self.ee_x)
+            self.ee_y_pub.publish(self.ee_y)
+            self.ee_z_pub.publish(self.ee_z)
 
 
         except CvBridgeError as e:

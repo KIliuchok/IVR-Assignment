@@ -195,7 +195,7 @@ class image_converter:
     self.ee_pos_x = Float64()
     self.ee_pos_x.data = red[0]
     self.ee_pos_z = Float64()
-    self.ee_pos_z = red[1]
+    self.ee_pos_z = red[1]  
 
     target = self.detect_target(self.cv_image2, target='sphere')
     self.target_x = Float64()
@@ -203,11 +203,11 @@ class image_converter:
     self.target_z = Float64()
     self.target_z.data = target[1]
 
-    box = self.detect_target(self.cv_image2, target='box')
-    self.box_x = Float64()
-    self.box_x.data = box[0]
-    self.box_z = Float64()
-    self.box_z.data = box[1]
+    # box = self.detect_target(self.cv_image2, target='box')
+    # self.box_x = Float64()
+    # self.box_x.data = box[0]
+    # self.box_z = Float64()
+    # self.box_z.data = box[1]
 
 
     # Publish the results
@@ -217,11 +217,11 @@ class image_converter:
       self.robot_joint1_x_estimation.publish(self.joint1x)
       self.robot_joint1_z_estimation.publish(self.joint1z)
 
-      self.robot_joint23_x_estimation.publish(self.joint23_x)
-      self.robot_joint23_z_estimation.publish(self.joint23_z)
+      # self.robot_joint23_x_estimation.publish(self.joint23_x)
+      # self.robot_joint23_z_estimation.publish(self.joint23_z)
 
-      self.robot_joint4_x_estimation.publish(self.joint4_x)
-      self.robot_joint4_z_estimation.publish(self.joint4_z)
+      # self.robot_joint4_x_estimation.publish(self.joint4_x)
+      # self.robot_joint4_z_estimation.publish(self.joint4_z)
 
       self.robot_ee_x_estimation.publish(self.ee_pos_x)
       self.robot_ee_z_estimation.publish(self.ee_pos_z)
@@ -229,8 +229,8 @@ class image_converter:
       self.robot_target_x_estimation.publish(self.target_x)
       self.robot_target_z_estimation.publish(self.target_z)
 
-      self.robot_box_x_estimation.publish(self.box_x)
-      self.robot_box_z_estimation.publish(self.box_z)
+      # self.robot_box_x_estimation.publish(self.box_x)
+      # self.robot_box_z_estimation.publish(self.box_z)
 
     except CvBridgeError as e:
       print(e)
