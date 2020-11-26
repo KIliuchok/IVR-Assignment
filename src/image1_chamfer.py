@@ -85,6 +85,11 @@ class image_converter:
         self.ee_x_pub = rospy.Publisher('ee/estimated_x', Float64, queue_size=10)
         self.ee_z_pub = rospy.Publisher('ee/estimated_z', Float64, queue_size=10)
 
+        # Box position publishers
+        self.box_x_pub = rospy.Publisher('box/estimated_x', Float64, queue_size=10)
+        self.box_y_pub = rospy.Publisher('box/estimated_y', Float64, queue_size=10)
+        self.box_z_pub = rospy.Publisher('box/estimated_z', Float64, queue_size=10)
+
         self.rate = rospy.Rate(20)
 
         # Time steps
@@ -640,7 +645,7 @@ class image_converter:
         # self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
         self.estimate_and_update_target(self.cv_image1)
-        # self.estimate_and_update_box(self.cv_image1)
+        self.estimate_and_update_box(self.cv_image1)
         
 
         # joint23_estimation = self.estimate_angles_for_j23()
@@ -666,6 +671,14 @@ class image_converter:
         self.ee_x.data = (self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio
         self.ee_y.data = (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio
         self.ee_z.data = (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio
+
+
+        self.box_x = Float64()
+        self.box_y = Float64()
+        self.box_z = Float64()    
+        self.box_x.data = self.box_coordinates['x']
+        self.box_y.data = self.box_coordinates['y']
+        self.box_z.data = self.box_coordinates['z']
 
         # print("Joint2 sent ", self.joint2.data)
         # print("Joint2 estimated ", self.joint2_estimation.data)
@@ -711,8 +724,8 @@ class image_converter:
 
         angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
         
-        q_d = self.control_closed(angles, FK)
-        # q_d = self.control_null_space(angles, FK)
+        # q_d = self.control_closed(angles, FK)
+        q_d = self.control_null_space(angles, FK)
 
 
         self.joint1 = Float64()
@@ -756,6 +769,10 @@ class image_converter:
             self.ee_x_pub.publish(self.ee_x)
             self.ee_y_pub.publish(self.ee_y)
             self.ee_z_pub.publish(self.ee_z)
+
+            self.box_x_pub.publish(self.box_x)
+            self.box_y_pub.publish(self.box_y)
+            self.box_z_pub.publish(self.box_z)
 
 
         except CvBridgeError as e:
