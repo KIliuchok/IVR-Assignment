@@ -47,7 +47,7 @@ class image_converter:
         self.joint4_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
         self.ee_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
         self.target_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
-
+        self.box_coordinates = {'x' : 0, 'y' : 0, 'z' : 0}
 
 
         self.pixel2meter_ratio = 0
@@ -64,9 +64,12 @@ class image_converter:
         self.ee_estimation_z = rospy.Subscriber("/estimation/ee_z", Float64, self.update_ee_z)
         self.target_estimation_x = rospy.Subscriber("estimation/target_x/camera2", Float64, self.update_target_x, queue_size=10)
         self.target_estimation_z = rospy.Subscriber("estimation/target_z/camera2", Float64, self.update_target_z, queue_size=10)
+        self.box_estimation_x = rospy.Subscriber("estimation/box_x/camera2", Float64, self.update_box_x, queue_size=10)
+        self.box_estimation_z = rospy.Subscriber("estimation/box_z/camera2", Float64, self.update_box_z, queue_size=10)
 
         # template for chamfer matching
         self.template_orange_sphere = cv2.imread(os.getcwd() + '/sphere.png', 0)
+        self.template_orange_box = cv2.imread(os.getcwd() + '/box.png', 0)
         self.template_blue = cv2.imread(os.getcwd() + '/template_blue.png', 0)
         self.template_yellow = cv2.imread(os.getcwd() + '/template_yellow.png', 0)
         self.template_green = cv2.imread(os.getcwd() + '/template_green.png', 0)
@@ -93,11 +96,11 @@ class image_converter:
         self.actual_target_position_y_sub = rospy.Subscriber('/target/y_position_controller/command', Float64, self.update_target_actual_y, queue_size=10)
         self.actual_target_position_z_sub = rospy.Subscriber('/target/z_position_controller/command', Float64, self.update_target_actual_z, queue_size=10)
 
-        # box position for null-space control
-        self.box_position = {'x' : 0, 'y' : 0, 'z' : 0}
-        self.box_position_x_sub = rospy.Subscriber('/target2/x2_position_controller/command', Float64, self.update_box_position_x, queue_size=10)
-        self.box_position_y_sub = rospy.Subscriber('/target2/y2_position_controller/command', Float64, self.update_box_position_y, queue_size=10)
-        self.box_position_z_sub = rospy.Subscriber('/target2/z2_position_controller/command', Float64, self.update_box_position_z, queue_size=10)
+        # actual box position for null-space control
+        self.actual_box_position = {'x' : 0, 'y' : 0, 'z' : 0}
+        self.actual_box_position_x_sub = rospy.Subscriber('/target2/x2_position_controller/command', Float64, self.update_box_actual_x, queue_size=10)
+        self.actual_box_position_y_sub = rospy.Subscriber('/target2/y2_position_controller/command', Float64, self.update_box_actual_y, queue_size=10)
+        self.actual_box_position_z_sub = rospy.Subscriber('/target2/z2_position_controller/command', Float64, self.update_box_actual_z, queue_size=10)
 
 
         # Initialize error and derivative of the error
@@ -109,6 +112,8 @@ class image_converter:
         self.error_d_secondary = np.array([0.0, 0.0, 0.0, 0.0], dtype='float64')
 
 
+    # The actual coordinates of the sphere and box are used only for checking correctness of controllers
+    # In final report, the estimated values are used
     def update_target_actual_x(self, data):
         self.actual_target_position['x'] = data.data
 
@@ -118,14 +123,14 @@ class image_converter:
     def update_target_actual_z(self, data):
         self.actual_target_position['z'] = data.data
 
-    def update_box_position_x(self, data):
-        self.box_position['x'] = data.data
+    def update_box_actual_x(self, data):
+        self.actual_box_position['x'] = data.data
 
-    def update_box_position_y(self, data):
-        self.box_position['y'] = data.data
+    def update_box_actual_y(self, data):
+        self.actual_box_position['y'] = data.data
 
-    def update_box_position_z(self, data):
-        self.box_position['z'] = data.data
+    def update_box_actual_z(self, data):
+        self.actual_box_position['z'] = data.data
 
 
     def update_actual_joint_states(self, data):
@@ -164,6 +169,12 @@ class image_converter:
 
     def update_target_z(self, data):
         self.target_coordinates['z'] = data.data
+
+    def update_box_x(self, data):
+        self.box_coordinates['x'] = data.data
+
+    def update_box_z(self, data):
+        self.box_coordinates['z'] = data.data
 
 
 
@@ -231,30 +242,43 @@ class image_converter:
 
 
 
-    def detect_target(self, image):
+    def detect_target(self, image, target='sphere'):
         mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
 
         # remove box by finding its contour first and filling it with grey
         edges = cv2.Canny(mask, 30, 200)
         contours, hierarchy = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
 
-        #Contour approximation to distinguish between sphere and box
+        # Contour approximation to distinguish between sphere and box
+        # The contour chosen will be filled with grey, therefore if we want to detect the sphere, fill the box and viceversa
         c = None
         for contour in contours:
             length = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, length*0.04, True)
-            if len(approx) == 4:
-                c = contour
+            if target == 'sphere':
+                if len(approx) == 4:
+                    c = contour   
+            elif target == 'box':
+                if len(approx) != 4:
+                    c = contour
+                    
+        image_no_target= image.copy()
+        image_no_target = cv2.drawContours(image_no_target, [c], -1, (179, 179, 179), thickness=cv2.FILLED) 
 
-        image = cv2.drawContours(image, [c], -1, (179, 179, 179), thickness=cv2.FILLED) 
-
-        mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
+        mask = cv2.inRange(image_no_target, (5, 50, 100), (10, 80, 150))
 
 
         # Chamfer matching
         method = eval('cv2.TM_SQDIFF')
-        w, h = self.template_orange_sphere.shape[::-1]
-        res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
+
+        if target == 'sphere':
+            w, h = self.template_orange_sphere.shape[::-1]
+            res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
+        elif target == 'box':
+            w, h = self.template_orange_box.shape[::-1]
+            res = cv2.matchTemplate(mask, self.template_orange_box, method)
+
+
         min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
         top_left = min_loc
         bottom_right = (top_left[0] + w, top_left[1] + h)
@@ -268,8 +292,9 @@ class image_converter:
         delta_y = self.pixel2meter_ratio * (y - y_yellow)
         delta_z = self.pixel2meter_ratio * (z_yellow - z)
 
-        cv2.imshow('test', mask)
-        cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        # cv2.imshow('mask camera1', mask)
+        # cv2.imshow('window1', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+        
         return np.array([delta_y, delta_z])
 
 
@@ -390,7 +415,7 @@ class image_converter:
             self.ee_coordinates['z'] = red[1]
 
     def estimate_and_update_target(self, image):
-        target = self.detect_target(image)
+        target = self.detect_target(image, target='sphere')
         self.target_coordinates['y'] = target[0]
         if not (self.target_coordinates['z'] == 0):
             temp = self.target_coordinates['z'] + target[1]
@@ -398,11 +423,19 @@ class image_converter:
         else:
             self.target_coordinates['z'] = target[1]
 
+    def estimate_and_update_box(self, image):
+        box = self.detect_target(image, target='box')
+        self.box_coordinates['y'] = box[0]
+        if not(self.box_coordinates['z'] == 0):
+            temp = self.box_coordinates['z'] + box[1]
+            self.box_coordinates['z'] = temp/2
+        else:
+            self.box_coordinates['z'] = box[1]
 
 
     def transformation_matrix(self, a, alpha, d, theta):
         '''
-        Computes transformation matrix A for frame i wrt to frame i-1 by followinf DH convention
+        Computes transformation matrix A for frame i wrt to frame i-1 by following DH convention
         '''
         
         # Rotation about z
@@ -456,8 +489,8 @@ class image_converter:
 
     def control_closed(self, angles, FK, target='sphere'):
         K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
-        K_d = np.array([[0.05,0,0],[0,0.05,0],[0,0,0.05]]) 
-        K_i = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]])
+        K_d = np.array([[0.01,0,0],[0,0.01,0],[0,0,0.01]]) 
+        K_i = np.array([[0.15,0,0],[0,0.15,0],[0,0,0.15]])
 
         c_time = np.array([rospy.get_time()])
         dt = c_time - self.time_previous_step
@@ -467,18 +500,16 @@ class image_converter:
                         (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
                         (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
 
-        # Depending on whether we want to follow the sphere or the box
+        # Depending on whether we want to follow thebox sphere or the box
         if target == 'sphere':
-            pos_d = np.array([self.actual_target_position['x'], 
-                              self.actual_target_position['y'], 
-                              self.actual_target_position['z']])
+            pos_d = np.array([self.target_coordinates['x'], 
+                              self.target_coordinates['y'], 
+                              self.target_coordinates['z']])
         elif target == 'box':
-            pos_d = np.array([self.box_position['x'], 
-                              self.box_position['y'], 
-                              self.box_position['z']])
+            pos_d = np.array([self.box_coordinates['x'], 
+                              self.box_coordinates['y'], 
+                              self.box_coordinates['z']])
 
-        # print("Error: ", abs(pos_d-pos))
-        # print(" ")
 
         self.error_d = ((pos_d - pos) - self.error) / dt
         self.error = pos_d - pos
@@ -493,7 +524,7 @@ class image_converter:
     def control_null_space(self, angles, FK):
         K_p = np.array([[3,0,0],[0,3,0],[0,0,3]])
         K_d = np.array([[0.01,0,0],[0,0.01,0],[0,0,0.01]]) 
-        K_i = np.array([[0.12,0,0],[0,0.2,0],[0,0,0.2]])
+        K_i = np.array([[0.15,0,0],[0,0.15,0],[0,0,0.15]])
 
         # Configuration we want to stay away from
         pos_not_d = self.control_closed(angles, FK, target='box')
@@ -505,9 +536,11 @@ class image_converter:
         pos = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, 
                          (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, 
                          (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
-        pos_d = np.array([self.actual_target_position['x'], 
-                           self.actual_target_position['y'], 
-                           self.actual_target_position['z']])
+
+
+        pos_d = np.array([self.target_coordinates['x'], 
+                          self.target_coordinates['y'], 
+                          self.target_coordinates['z']])
 
         
 
@@ -601,7 +634,8 @@ class image_converter:
         # self.estimate_and_update_j23(self.cv_image1)
         self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
-        # self.estimate_and_update_target(self.cv_image1)
+        self.estimate_and_update_target(self.cv_image1)
+        self.estimate_and_update_box(self.cv_image1)
         
 
         # joint23_estimation = self.estimate_angles_for_j23()
@@ -664,6 +698,7 @@ class image_converter:
         #####################  NULL-SPACE CONTROL  #####################
 
         angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
+        
         # q_d = self.control_closed(angles, FK)
         q_d = self.control_null_space(angles, FK)
 

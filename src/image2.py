@@ -27,6 +27,7 @@ class image_converter:
     
     # template for chamfer matching
     self.template_orange_sphere = cv2.imread(os.getcwd() + '/sphere.png', 0)
+    self.template_orange_box = cv2.imread(os.getcwd() + '/box.png', 0)
     self.template_blue = cv2.imread(os.getcwd() + '/template_blue.png', 0)
     self.template_yellow = cv2.imread(os.getcwd() + '/template_yellow.png', 0)
     self.template_green = cv2.imread(os.getcwd() + '/template_green.png', 0)
@@ -42,6 +43,8 @@ class image_converter:
     self.robot_ee_z_estimation = rospy.Publisher("/estimation/ee_z", Float64, queue_size=10)
     self.robot_target_x_estimation = rospy.Publisher("estimation/target_x/camera2", Float64, queue_size=10)
     self.robot_target_z_estimation = rospy.Publisher("estimation/target_z/camera2", Float64, queue_size=10)
+    self.robot_box_x_estimation = rospy.Publisher("estimation/box_x/camera2", Float64, queue_size=10)
+    self.robot_box_z_estimation = rospy.Publisher("estimation/box_z/camera2", Float64, queue_size=10)
 
     self.pixel2meter_ratio = 0
 
@@ -95,9 +98,8 @@ class image_converter:
     return np.array([x, z])
 
 
-  def detect_target(self, image):
+  def detect_target(self, image, target='sphere'):
     mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
-# remove box by finding its contour first and filling it with grey
     edges = cv2.Canny(mask, 30, 200)
     contours, hierarchy = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
 
@@ -106,14 +108,28 @@ class image_converter:
     for contour in contours:
         length = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, length*0.04, True)
-        if len(approx) == 4:
-            c = contour
+        if target == 'sphere':
+            if len(approx) == 4:
+                c = contour
+        elif target == 'box':
+            if len(approx) != 4:
+                c = contour
+
+    image_no_target= image.copy()
+    image_no_target = cv2.drawContours(image_no_target, [c], -1, (179, 179, 179), thickness=cv2.FILLED) 
+
+    mask = cv2.inRange(image_no_target, (5, 50, 100), (10, 80, 150))
 
     method = eval('cv2.TM_SQDIFF')
-    w, h = self.template_orange_sphere.shape[::-1]
-    res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+    if target == 'sphere':
+        w, h = self.template_orange_sphere.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_orange_sphere, method)
+    elif target == 'box':
+        w, h = self.template_orange_box.shape[::-1]
+        res = cv2.matchTemplate(mask, self.template_orange_box, method)
 
+
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
     top_left = min_loc
     bottom_right = (top_left[0] + w, top_left[1] + h)
     x = top_left[0] + (w/2)
@@ -127,7 +143,7 @@ class image_converter:
     delta_x = self.pixel2meter_ratio * (x - x_yellow)
     delta_z = self.pixel2meter_ratio * (z_yellow - z)
 
-    cv2.imshow('window2', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
+    # cv2.imshow('detection camera2', cv2.rectangle(image, top_left, bottom_right, (0,0,0), 2))
 
     return np.array([delta_x, delta_z])
 
@@ -154,58 +170,67 @@ class image_converter:
 
     # Uncomment if you want to save the image
     #cv2.imwrite('image_copy.png', cv_image)
-    im2=cv2.imshow('window2', self.cv_image2)
-    cv2.waitKey(1)
+    # im2=cv2.imshow('window2', self.cv_image2)
+    # cv2.waitKey(1)
 
-    # yellow = self.detect_yellow(self.cv_image2)
-    # self.joint1x = Float64()
-    # self.joint1x.data = yellow[0]
-    # self.joint1z = Float64()
-    # self.joint1z.data = yellow[1]
+    yellow = self.detect_yellow(self.cv_image2)
+    self.joint1x = Float64()
+    self.joint1x.data = yellow[0]
+    self.joint1z = Float64()
+    self.joint1z.data = yellow[1]
 
-    # blue = self.detect_blue(self.cv_image2)
-    # self.joint23_x = Float64()
-    # self.joint23_x.data = blue[0]
-    # self.joint23_z = Float64()
-    # self.joint23_z.data = blue[1]
+    blue = self.detect_blue(self.cv_image2)
+    self.joint23_x = Float64()
+    self.joint23_x.data = blue[0]
+    self.joint23_z = Float64()
+    self.joint23_z.data = blue[1]
 
-    # green = self.detect_green(self.cv_image2)
-    # self.joint4_x = Float64()
-    # self.joint4_x.data = green[0]
-    # self.joint4_z = Float64()
-    # self.joint4_z.data = green[1]
+    green = self.detect_green(self.cv_image2)
+    self.joint4_x = Float64()
+    self.joint4_x.data = green[0]
+    self.joint4_z = Float64()
+    self.joint4_z.data = green[1]
 
-    # red = self.detect_red(self.cv_image2)
-    # self.ee_pos_x = Float64()
-    # self.ee_pos_x.data = red[0]
-    # self.ee_pos_z = Float64()
-    # self.ee_pos_z = red[1]
+    red = self.detect_red(self.cv_image2)
+    self.ee_pos_x = Float64()
+    self.ee_pos_x.data = red[0]
+    self.ee_pos_z = Float64()
+    self.ee_pos_z = red[1]
 
-    target = self.detect_target(self.cv_image2)
+    target = self.detect_target(self.cv_image2, target='sphere')
     self.target_x = Float64()
     self.target_x.data = target[0]
     self.target_z = Float64()
     self.target_z.data = target[1]
+
+    box = self.detect_target(self.cv_image2, target='box')
+    self.box_x = Float64()
+    self.box_x.data = box[0]
+    self.box_z = Float64()
+    self.box_z.data = box[1]
 
 
     # Publish the results
     try: 
       self.image_pub2.publish(self.bridge.cv2_to_imgmsg(self.cv_image2, "bgr8"))
 
-      # self.robot_joint1_x_estimation.publish(self.joint1x)
-      # self.robot_joint1_z_estimation.publish(self.joint1z)
+      self.robot_joint1_x_estimation.publish(self.joint1x)
+      self.robot_joint1_z_estimation.publish(self.joint1z)
 
-      # self.robot_joint23_x_estimation.publish(self.joint23_x)
-      # self.robot_joint23_z_estimation.publish(self.joint23_z)
+      self.robot_joint23_x_estimation.publish(self.joint23_x)
+      self.robot_joint23_z_estimation.publish(self.joint23_z)
 
-      # self.robot_joint4_x_estimation.publish(self.joint4_x)
-      # self.robot_joint4_z_estimation.publish(self.joint4_z)
+      self.robot_joint4_x_estimation.publish(self.joint4_x)
+      self.robot_joint4_z_estimation.publish(self.joint4_z)
 
-      # self.robot_ee_x_estimation.publish(self.ee_pos_x)
-      # self.robot_ee_z_estimation.publish(self.ee_pos_z)
+      self.robot_ee_x_estimation.publish(self.ee_pos_x)
+      self.robot_ee_z_estimation.publish(self.ee_pos_z)
 
       self.robot_target_x_estimation.publish(self.target_x)
       self.robot_target_z_estimation.publish(self.target_z)
+
+      self.robot_box_x_estimation.publish(self.box_x)
+      self.robot_box_z_estimation.publish(self.box_z)
 
     except CvBridgeError as e:
       print(e)
