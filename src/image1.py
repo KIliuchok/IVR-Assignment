@@ -584,27 +584,6 @@ class image_converter:
 
 
     ########### Estimate angles between points ############
-    def estimate_angles_for_j1(self):
-        angle_xz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])
-        angle_yz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])
-        return np.array([angle_xz,angle_yz])
-    
-    def estimate_angles_for_j23(self):
-        delta_vertical = self.joint23_coordinates['z'] - self.joint4_coordinates['z']
-        delta_horizontal = self.joint4_coordinates['y'] - self.joint23_coordinates['y']
-        angle_xz = np.arctan2(delta_vertical, delta_horizontal) - np.pi/2
-
-        delta_horizontal = self.joint4_coordinates['x'] - self.joint23_coordinates['x']
-        angle_yz = np.arctan2(delta_vertical, delta_horizontal) - np.pi/2
-        return np.array([angle_xz, angle_yz])
-
-    def estimate_angles_for_j4(self):
-        temp2 = self.estimate_angles_for_j23()
-        if (self.ee_coordinates['z'] > self.joint4_coordinates['z']):
-            angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.joint4_coordinates['y'] - self.ee_coordinates['y']) + np.pi/2
-        else:
-            angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.ee_coordinates['y'] - self.joint4_coordinates['y']) - temp2[1] + np.pi/2 - np.pi
-        return angle_yz
 
     def FK_to_green(self, angles):
     	theta1, theta2, theta3 = symbols('theta1 theta2 theta3')
@@ -657,7 +636,6 @@ class image_converter:
     	diff_green = g_pos_w - self.fast_FK_to_green(q)
     	result = np.concatenate(np.array([diff_green, diff_red]))
     	return result
-
 
 
 
