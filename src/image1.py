@@ -692,8 +692,8 @@ class image_converter:
 
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
         self.estimate_and_update_j1(self.cv_image1)
-        self.estimate_and_update_j23(self.cv_image1)
-        self.estimate_and_update_j4(self.cv_image1)
+        #self.estimate_and_update_j23(self.cv_image1)
+        #self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
         self.estimate_and_update_target(self.cv_image1)
         self.estimate_and_update_box(self.cv_image1)
@@ -786,17 +786,17 @@ class image_converter:
         angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
         
         # q_d = self.control_closed(angles, FK)
-        #q_d = self.control_null_space(angles, FK)
+        q_d = self.control_null_space(angles, FK)
 
 
-        #self.joint1 = Float64()
-        #self.joint1.data = q_d[0]
-        #self.joint2 = Float64()
-        #self.joint2.data = q_d[1]
-        #self.joint3 = Float64()
-        #self.joint3.data = q_d[2]
-        #self.joint4 = Float64()
-        #self.joint4.data = q_d[3]
+        self.joint1 = Float64()
+        self.joint1.data = q_d[0]
+        self.joint2 = Float64()
+        self.joint2.data = q_d[1]
+        self.joint3 = Float64()
+        self.joint3.data = q_d[2]
+        self.joint4 = Float64()
+        self.joint4.data = q_d[3]
 
 
 
