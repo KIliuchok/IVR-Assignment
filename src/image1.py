@@ -310,6 +310,10 @@ class image_converter:
 
 
     def remove_orange(self, image):
+        '''
+        This function makes sure that when one of the joints is obstructed by an orange object, a "patch"
+        of the approapriate color is applied on top of the orange object.
+        '''
         mask = cv2.inRange(image, (5, 50, 100), (10, 80, 150))
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=1)
@@ -352,6 +356,8 @@ class image_converter:
                     new_image[y, x] = [1,1,120]
                 elif (joint4_y > x-20 and joint4_y < x+20 and joint4_z > y-20 and joint4_z < y+20):
                     new_image[y, x] = [1, 120, 1]
+
+        # cv2.imshow("no orange image", new_image)
 
         return new_image
 
@@ -664,7 +670,6 @@ class image_converter:
         # Receive the image
         try:
             self.cv_image1 = self.bridge.imgmsg_to_cv2(data, "bgr8")
-            #self.orange_binary_mask = self.detect_orange(self.cv_image1)
         except CvBridgeError as e:
             print(e)
 
@@ -689,12 +694,13 @@ class image_converter:
 
 
         # Get the y and z coordinates from camera 1 and update them accordingly 
+        # Use remove_orange() to address joints being obstructed by sphere/box
 
-        #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
-        self.estimate_and_update_j1(self.cv_image1)
-        #self.estimate_and_update_j23(self.cv_image1)
-        #self.estimate_and_update_j4(self.cv_image1)
-        self.estimate_and_update_ee(self.cv_image1)
+        self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
+        self.estimate_and_update_j1(self.cv_image1_no_orange)
+        #self.estimate_and_update_j23(self.cv_image1_no_orange)
+        #self.estimate_and_update_j4(self.cv_image1_no_orange)
+        self.estimate_and_update_ee(self.cv_image1_no_orange)
         self.estimate_and_update_target(self.cv_image1)
         self.estimate_and_update_box(self.cv_image1)
         
@@ -740,14 +746,6 @@ class image_converter:
         self.box_x.data = self.box_coordinates['x']
         self.box_y.data = self.box_coordinates['y']
         self.box_z.data = self.box_coordinates['z']
-
-        # print("Joint2 sent ", self.joint2.data)
-        # print("Joint2 estimated ", self.joint2_estimation.data)
-        # print("Joint3 sent ", self.joint3.data)
-        # print("Joint3 estimated ", self.joint3_estimation.data)
-        # print("Joint4 sent ", self.joint4.data)
-        # print("Joint4 estimated ", self.joint4_estimation.data)
-        # print(" ")
 
         ##################### FORWARD KINEMATICS #####################
 
