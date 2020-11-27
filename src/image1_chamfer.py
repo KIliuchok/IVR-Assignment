@@ -11,6 +11,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
+from scipy import optimize
 
 
 class image_converter:
@@ -581,9 +582,7 @@ class image_converter:
         angle_xz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['x'] - self.joint1_coordinates['x'])
         angle_yz = np.arctan2(self.joint23_coordinates['z'] - self.joint1_coordinates['z'], self.joint23_coordinates['y'] - self.joint1_coordinates['y'])
         return np.array([angle_xz,angle_yz])
-
-
-      
+    
     def estimate_angles_for_j23(self):
         delta_vertical = self.joint23_coordinates['z'] - self.joint4_coordinates['z']
         delta_horizontal = self.joint4_coordinates['y'] - self.joint23_coordinates['y']
@@ -593,8 +592,6 @@ class image_converter:
         angle_yz = np.arctan2(delta_vertical, delta_horizontal) - np.pi/2
         return np.array([angle_xz, angle_yz])
 
-
-
     def estimate_angles_for_j4(self):
         temp2 = self.estimate_angles_for_j23()
         if (self.ee_coordinates['z'] > self.joint4_coordinates['z']):
@@ -602,6 +599,62 @@ class image_converter:
         else:
             angle_yz = (-1) * np.arctan2(self.ee_coordinates['z'] - self.joint4_coordinates['z'], self.ee_coordinates['y'] - self.joint4_coordinates['y']) - temp2[1] + np.pi/2 - np.pi
         return angle_yz
+
+    def FK_to_green(self, angles):
+    	theta1, theta2, theta3 = symbols('theta1 theta2 theta3')
+    	A_01 = self.transformation_matrix(0, pi/2, 2.5, (pi/2 + theta1))
+    	A_12 = self.transformation_matrix(0, pi/2, 0, (pi/2 + theta2))
+    	A_23 = self.transformation_matrix(3.5, -pi/2, 0, theta3)
+    	FK = A_01*A_12*A_23
+    	test = FK.evalf(subs = {theta1:angles[0], theta2:angles[1], theta3:angles[2]})
+    	pos = np.array([test[0,3], test[1,3], test[2,3]]).astype(np.float64)
+    	return pos
+
+    def estimate_angles(self):
+    	#print(angles)
+    	initial = np.array([0, 0.5, 0.5, 0.5])
+    	result = optimize.least_squares(self.fun, initial, bounds=(np.array([-0.00001, -np.pi/2, -np.pi/2, -np.pi/2]),np.array([0.00001, np.pi/2, np.pi/2, np.pi/2])))
+    	return result.x
+
+    def fast_FK(self,a):
+    	def c(b):
+    		no = np.cos(a[b-1])
+    		return no
+
+    	def s(b):
+    		no = np.sin(a[b-1])
+    		return no
+
+    	return np.array([3*(s(1)*s(2)*c(3)+s(3)*c(1))*c(4)+3.5*s(1)*s(2)*c(3)+3*s(1)*s(4)*c(2)+3.5*s(3)*c(1),
+    		3*(s(1)*s(3)-s(2)*c(1)*c(3))*c(4)+3.5*s(1)*s(3)-3.5*s(2)*c(1)*c(3)-3*s(4)*c(1)*c(2),
+    		-3*s(2)*s(4)+3*c(2)*c(3)*c(4)+3.5*c(2)*c(3)+2.5
+    		])
+
+    def fast_FK_to_green(self,a):
+    	def c(b):
+    		no = np.cos(a[b-1])
+    		return no
+
+    	def s(b):
+    		no = np.sin(a[b-1])
+    		return no
+
+    	return np.array([3.5*s(1)*s(2)*c(3)+3.5*s(3)*c(1),
+    		3.5*s(1)*s(3)-3.5*s(2)*c(1)*c(3),
+    		3.5*c(2)*c(3)+2.5
+    		])
+
+    def fun(self, q):
+    	r_pos_w = np.array([(self.ee_coordinates['x'] - self.joint1_coordinates['x']) * self.pixel2meter_ratio, (self.ee_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, (self.joint1_coordinates['z'] - self.ee_coordinates['z']) * self.pixel2meter_ratio])
+    	g_pos_w = np.array([(self.joint4_coordinates['x'] - self.joint1_coordinates['x'] ) * self.pixel2meter_ratio, (self.joint4_coordinates['y'] - self.joint1_coordinates['y']) * self.pixel2meter_ratio, (self.ee_coordinates['z'] - self.joint1_coordinates['z']) *(-1) *self.pixel2meter_ratio])
+    	diff_red = r_pos_w - self.fast_FK(q)
+    	diff_green = g_pos_w - self.fast_FK_to_green(q)
+    	result = np.concatenate(np.array([diff_green, diff_red]))
+    	return result
+
+
+
+
 
 
     ####################### CALLBACKS ##############################
@@ -637,12 +690,10 @@ class image_converter:
 
         # Get the y and z coordinates from camera 1 and update them accordingly 
 
-
-
         #self.cv_image1_no_orange = self.remove_orange(self.cv_image1)
         self.estimate_and_update_j1(self.cv_image1)
-        # self.estimate_and_update_j23(self.cv_image1)
-        # self.estimate_and_update_j4(self.cv_image1)
+        self.estimate_and_update_j23(self.cv_image1)
+        self.estimate_and_update_j4(self.cv_image1)
         self.estimate_and_update_ee(self.cv_image1)
         self.estimate_and_update_target(self.cv_image1)
         self.estimate_and_update_box(self.cv_image1)
@@ -657,6 +708,16 @@ class image_converter:
         # self.joint3_estimation.data = joint23_estimation[1]
         # self.joint4_estimation = Float64()
         # self.joint4_estimation.data = joint4_estimation_x
+
+        #### Estimate the angles of joints by least squares method ####
+        #estimated_angles = self.estimate_angles()
+
+        #self.joint2_estimation = Float64()
+        #self.joint3_estimation = Float64()
+        #self.joint4_estimation = Float64()
+        #self.joint2_estimation.data = estimated_angles[1]
+        #self.joint3_estimation.data = estimated_angles[2]
+        #self.joint4_estimation.data = estimated_angles[3]
 
         self.target_x = Float64()
         self.target_y = Float64()
@@ -725,17 +786,17 @@ class image_converter:
         angles = np.array([self.actual_joint_states['q1'], self.actual_joint_states['q2'], self.actual_joint_states['q3'], self.actual_joint_states['q4']])
         
         # q_d = self.control_closed(angles, FK)
-        q_d = self.control_null_space(angles, FK)
+        #q_d = self.control_null_space(angles, FK)
 
 
-        self.joint1 = Float64()
-        self.joint1.data = q_d[0]
-        self.joint2 = Float64()
-        self.joint2.data = q_d[1]
-        self.joint3 = Float64()
-        self.joint3.data = q_d[2]
-        self.joint4 = Float64()
-        self.joint4.data = q_d[3]
+        #self.joint1 = Float64()
+        #self.joint1.data = q_d[0]
+        #self.joint2 = Float64()
+        #self.joint2.data = q_d[1]
+        #self.joint3 = Float64()
+        #self.joint3.data = q_d[2]
+        #self.joint4 = Float64()
+        #self.joint4.data = q_d[3]
 
 
 
@@ -752,7 +813,7 @@ class image_converter:
         try:
             self.image_pub1.publish(self.bridge.cv2_to_imgmsg(self.cv_image1, "bgr8"))
             # Move joints by following given trajectories / closed-loop control
-            self.robot_joint1_pub.publish(self.joint1)
+            #self.robot_joint1_pub.publish(self.joint1)
             self.robot_joint2_pub.publish(self.joint2)
             self.robot_joint3_pub.publish(self.joint3)
             self.robot_joint4_pub.publish(self.joint4)
