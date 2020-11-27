@@ -1,6 +1,6 @@
 # IVR-Assignment
 
-The main main to be executed for the assignment are located in files image1.py, image2.py and target_move.py.
+The main code to be executed for the assignment are located in files image1.py, image2.py and target_move.py.
 
 image2.py has to be run first with the rosrun command because it creates topics which are later subscribed in image1.py. 
 
