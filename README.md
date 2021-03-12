@@ -1,4 +1,4 @@
-# IVR-Assignment
+# Computer Vision and Robot Control
 
 The main code to be executed for the assignment is located in files image1.py, image2.py and target_move.py.
 
